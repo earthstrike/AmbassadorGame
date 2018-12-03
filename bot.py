@@ -55,9 +55,9 @@ class Canvasser(object):
         global_warming_concern = np.random.choice(range(1, 11),
                                                   p=[.2, .1, 0.065, 0.067, 0.067, 0.067, 0.067, 0.067, 0.1, 0.2])
 
-        msg_a = f"""You are a {age} year old {profession}. On a scale of 1-10 (1 being none and 10 being the most), you have a strike awareness of {heard_of}.Possibility of strike succeeding {gs_probability}. Your concern about global warming is {global_warming_concern}. You will be connected in {PREP_TIME} seconds to a partner. Take a deep breath and get in character. You will give feedback after the session is over."""
+        msg_a = f"""You are a {age} year old {profession}. On a scale of 1-10 (1 being none and 10 being the most), you have a strike awareness of {heard_of}. Possibility of strike succeeding {gs_probability}. Your concern about global warming is {global_warming_concern}. You will be connected in {PREP_TIME} seconds to a partner. Take a deep breath and get in character. You will give feedback after the session is over."""
 
-        msg_b = f"""You are about to be matched with a partner playing a role. Be kind. You will have {SESSION_TIME // 60} minutes to get your partner more interested in EarthStrike. You will need to assess your partner's concerns tell them about EarthSrike if they haven't heard of it, tell them about the dangers we face from global warming, and help convince them that EarthStrike's strategy is the right approach. Take a deep breath and get ready...You will be connected in {PREP_TIME} seconds to a partner."""
+        msg_b = f"""You are about to be matched with a partner playing a role. Be kind. You will have {SESSION_TIME // 60} minutes to get your partner more interested in EarthStrike. You will need to assess your partner's concerns tell them about EarthSrike if they haven't heard of it, tell them about the dangers we face from global warming, and help convince them that EarthStrike's strategy is the right approach. Take a deep breath and get ready. You will be connected in {PREP_TIME} seconds to a partner."""
 
         await client.send_message(a, msg_a)
         await client.send_message(b, msg_b)
@@ -65,6 +65,7 @@ class Canvasser(object):
         self.matched[a] = b
         self.matched[b] = a
 
+        print(f"Created new session ({a}, {b})")
         await asyncio.sleep(PREP_TIME)
         await self.start_voice(a, b)
 
@@ -87,7 +88,9 @@ class Canvasser(object):
         await client.move_member(b, ch)
 
         print(f"Waiting for users {a} and {b} to join...")
+
         async def ch_filled(): return len(ch.voice_members) == 2
+
         await asyncio.wait_for(ch_filled(), PREP_TIME)
         print(f"Beginning session ({a}, {b})...")
         await asyncio.sleep(SESSION_TIME)
