@@ -73,6 +73,8 @@ class Canvasser(object):
         everyone_perms = PermissionOverwrite(read_messages=False)
         my_perms = PermissionOverwrite(read_messages=True)
         server = client.get_server(self.server_id)
+        if server is None:
+            raise ConnectionError(f"Cannot connect to Server({SERVER_ID})")
         ch = await client.create_channel(server, f"canvas_game:{a.name}-{b.name}",
                                          (server.default_role, everyone_perms),
                                          (a, my_perms), (b, my_perms), type=ChannelType.voice)
@@ -80,6 +82,11 @@ class Canvasser(object):
         await client.send_message(a, f"Please connect to: {invite.url}")
         await client.send_message(b, f"Please connect to: {invite.url}")
 
+        # Force members in
+        await client.move_member(a, ch)
+        await client.move_member(b, ch)
+
+        # TODO Don't start timer until both users have entered.
         await asyncio.sleep(SESSION_TIME)
         await self.end_voice(a, b, ch)
 
@@ -119,6 +126,7 @@ class Canvasser(object):
             await client.send_message(u, "Your answers have been recorded. Thank you!")
 
         # TODO Do something with responses
+        print(f"Canvas ({a}, {b}) complete!")
 
 
 canv = Canvasser(SERVER_ID)
