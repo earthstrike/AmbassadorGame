@@ -17,7 +17,7 @@ PROFESSIONS = ["student", "retail salesperson", "cashier", "office clerk", "food
 BOT_PREFIX = "$"
 TOKEN = os.environ.get('DISCORD_BOT_TOKEN')
 SERVER_ID = os.environ.get('DISCORD_SERVER_ID')
-PREP_TIME = 10  # 30
+PREP_TIME = 20  # 30
 SESSION_TIME = 10  # 120
 
 client = Bot(command_prefix=BOT_PREFIX)
@@ -86,9 +86,13 @@ class Canvasser(object):
         await client.move_member(a, ch)
         await client.move_member(b, ch)
 
-        # TODO Don't start timer until both users have entered.
+        print(f"Waiting for users {a} and {b} to join...")
+        async def ch_filled(): return len(ch.voice_members) == 2
+        await asyncio.wait_for(ch_filled(), PREP_TIME)
+        print(f"Beginning session ({a}, {b})...")
         await asyncio.sleep(SESSION_TIME)
         await self.end_voice(a, b, ch)
+        print(f"Session ({a}, {b}) Over.")
 
     async def end_voice(self, a, b, ch):
         """ End the voice channel message """
