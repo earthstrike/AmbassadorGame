@@ -1,6 +1,9 @@
 import asyncio
 import os
 import random
+import sqlite3
+import uuid
+import time
 
 import numpy as np
 from discord import PermissionOverwrite, ChannelType
@@ -29,6 +32,40 @@ class Canvasser(object):
         self.active_users = []
         self.matched = {}
         self.waiting = []
+        self.db = sqlite3.connect('AmbassadorResults.db')
+        self.cursor = self.db.cursor()
+        self.init_db()
+
+    def init_db(self):
+        self.cursor.execute("CREATE TABLE IF NOT EXISTS session "
+                            "(uuid TEXT NOT NULL PRIMARY KEY,"
+                            " datetime INTEGER NOT NULL,"
+                            " personA TEXT NOT NULL,"
+                            " personB TEXT NOT NULL,"
+                            " trainee_persona INTEGER NOT NULL,"
+                            " personA_response TEXT NOT NULL,"
+                            " personB_response TEXT NOT NULL,"
+                            "   FOREIGN KEY (trainee_persona) REFERENCES trainee_persona(uuid),"
+                            "   FOREIGN KEY (personA_response) REFERENCES response(uuid),"
+                            "   FOREIGN KEY (personB_response) REFERENCES response(uuid));")
+        self.cursor.execute("CREATE TABLE IF NOT EXISTS trainee_persona"
+                            "(uuid TEXT NOT NULL PRIMARY KEY,"
+                            " discord_user INTEGER NOT NULL,"
+                            " age INTEGER NOT NULL,"
+                            " profession TEXT NOT NULL,"
+                            " gs_prob REAL NOT NULL,"
+                            " gw_concern REAL NOT NULL);")
+        self.cursor.execute("CREATE TABLE IF NOT EXISTS response"
+                            "(uuid TEXT NOT NULL PRIMARY KEY,"
+                            " discord_user INTEGER NOT NULL,"
+                            " discord_partner INTEGER NOT NULL,"
+                            " knowledge INTEGER NOT NULL,"
+                            " concern INTEGER NOT NULL,"
+                            " strategy INTEGER NOT NULL,"
+                            " partner_pro TEXT NOT NULL, "
+                            " partner_con TEXT NOT NULL );")
+        self.db.commit()
+
 
     async def try_match(self, author):
         """ See if we can find someone to match with, who we haven't already matched with """
@@ -59,17 +96,22 @@ class Canvasser(object):
 
         msg_b = f"""You are about to be matched with a partner playing a role. Be kind. You will have {SESSION_TIME // 60} minutes to get your partner more interested in EarthStrike. You will need to assess your partner's concerns tell them about EarthSrike if they haven't heard of it, tell them about the dangers we face from global warming, and help convince them that EarthStrike's strategy is the right approach. Take a deep breath and get ready. You will be connected in {PREP_TIME} seconds to a partner."""
 
+        session_id = str(uuid.uuid4())
+        self.cursor.execute("INSERT INTO trainee_persona VALUES (?,?,?,?,?,?)",
+                            (session_id, a.id, age, profession, gs_probability, global_warming_concern))
+        self.db.commit()
+
         await client.send_message(a, msg_a)
         await client.send_message(b, msg_b)
 
         self.matched[a] = b
         self.matched[b] = a
 
-        print(f"Created new session ({a}, {b})")
+        print(f"Created new session [{session_id}]:({a}, {b})")
         await asyncio.sleep(PREP_TIME)
-        await self.start_voice(a, b)
+        await self.start_voice(a, b, session_id)
 
-    async def start_voice(self, a, b):
+    async def start_voice(self, a, b, session_id):
         """ Begin voice chat session between two people """
         everyone_perms = PermissionOverwrite(read_messages=False)
         my_perms = PermissionOverwrite(read_messages=True)
@@ -92,12 +134,11 @@ class Canvasser(object):
         async def ch_filled(): return len(ch.voice_members) == 2
 
         await asyncio.wait_for(ch_filled(), PREP_TIME)
-        print(f"Beginning Session ({a}, {b})...")
+        print(f"Beginning Session [{session_id}]({a}, {b})...")
         await asyncio.sleep(SESSION_TIME)
-        await self.end_voice(a, b, ch)
-        print(f"Session ({a}, {b}) Over.")
+        await self.end_voice(a, b, ch, session_id)
 
-    async def end_voice(self, a, b, ch):
+    async def end_voice(self, a, b, ch, session_id):
         """ End the voice channel message """
         await client.delete_channel(ch)
         del self.matched[a]
@@ -132,8 +173,17 @@ class Canvasser(object):
             responses[u].append((await client.wait_for_message(author=u)).content)
             await client.send_message(u, "Your answers have been recorded. Thank you!")
 
-        # TODO Do something with responses
-        print(f"Session ({a}, {b}) complete!")
+        print(f"Committing Session [{session_id}]({a}, {b}) to db...")
+        a_uuid = str(uuid.uuid4())
+        self.cursor.execute("INSERT INTO response VALUES (?,?,?,?,?,?,?,?)",
+                            (a_uuid, a.id, b.id, *responses[a]))
+        b_uuid = str(uuid.uuid4())
+        self.cursor.execute("INSERT INTO response VALUES (?,?,?,?,?,?,?,?)",
+                            (b_uuid, b.id, a.id, *responses[b]))
+        self.cursor.execute("INSERT INTO session VALUES (?,?,?,?,?,?,?)",
+                            (session_id, int(time.time()), a.id, b.id, session_id, a_uuid, b_uuid))
+        self.db.commit()
+        print(f"Session [{session_id}]({a}, {b}) complete!")
 
 
 canv = Canvasser(SERVER_ID)
@@ -154,4 +204,9 @@ async def join(context):
 
 
 print("Starting CanvasBot...", end='', flush=True)
-client.run(TOKEN)
+try:
+    client.run(TOKEN)
+finally:
+    print("Closing database", end='', flush=True)
+    canv.db.close()
+    print("Done.")
