@@ -83,16 +83,16 @@ class Canvasser(object):
         await client.send_message(a, f"Please connect to: {invite.url}")
         await client.send_message(b, f"Please connect to: {invite.url}")
 
-        # Force members in
+        # Force members into voice channel
         await client.move_member(a, ch)
         await client.move_member(b, ch)
 
-        print(f"Waiting for users {a} and {b} to join...")
+        print(f"Waiting for users {a} and {b} to join Voice Channel...")
 
         async def ch_filled(): return len(ch.voice_members) == 2
 
         await asyncio.wait_for(ch_filled(), PREP_TIME)
-        print(f"Beginning session ({a}, {b})...")
+        print(f"Beginning Session ({a}, {b})...")
         await asyncio.sleep(SESSION_TIME)
         await self.end_voice(a, b, ch)
         print(f"Session ({a}, {b}) Over.")
@@ -133,7 +133,7 @@ class Canvasser(object):
             await client.send_message(u, "Your answers have been recorded. Thank you!")
 
         # TODO Do something with responses
-        print(f"Canvas ({a}, {b}) complete!")
+        print(f"Session ({a}, {b}) complete!")
 
 
 canv = Canvasser(SERVER_ID)
