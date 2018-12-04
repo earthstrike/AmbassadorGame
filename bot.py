@@ -2,8 +2,8 @@ import asyncio
 import os
 import random
 import sqlite3
-import uuid
 import time
+import uuid
 
 import numpy as np
 from discord import PermissionOverwrite, ChannelType
@@ -43,10 +43,8 @@ class Canvasser(object):
                             " personA TEXT NOT NULL,"
                             " personB TEXT NOT NULL,"
                             " trainee_persona INTEGER NOT NULL,"
-                            " personA_response TEXT NOT NULL,"
                             " personB_response TEXT NOT NULL,"
                             "   FOREIGN KEY (trainee_persona) REFERENCES trainee_persona(uuid),"
-                            "   FOREIGN KEY (personA_response) REFERENCES response(uuid),"
                             "   FOREIGN KEY (personB_response) REFERENCES response(uuid));")
         self.cursor.execute("CREATE TABLE IF NOT EXISTS trainee_persona"
                             "(uuid TEXT NOT NULL PRIMARY KEY,"
@@ -65,7 +63,6 @@ class Canvasser(object):
                             " partner_pro TEXT NOT NULL, "
                             " partner_con TEXT NOT NULL );")
         self.db.commit()
-
 
     async def try_match(self, author):
         """ See if we can find someone to match with, who we haven't already matched with """
@@ -144,7 +141,7 @@ class Canvasser(object):
         del self.matched[a]
         del self.matched[b]
 
-        responses = {a: [], b: []}
+        response = []
 
         def check(msg):
             """ Ensure message is a parsable integer in range 1-10"""
@@ -153,35 +150,30 @@ class Canvasser(object):
             except:
                 return False
 
-        # Currently interviews users one-after-the-other, not concurrently. Might be blocking. 
-        for u in (a, b):
-            await client.send_message(u,
-                                      "On a scale of 1-10 (1 being none and 10 being the most) how much would you estimate you "
-                                      "know about EarthStrike after the conversation?")
-            responses[u].append((await client.wait_for_message(author=u, check=check)).content)
-            await client.send_message(u,
-                                      "On a scale of 1-10 (1 being none and 10 being the most) how much would you estimate you are "
-                                      "concerned about climate change after the conversation?")
-            responses[u].append((await client.wait_for_message(author=u, check=check)).content)
-            await client.send_message(u,
-                                      "On a scale of 1-10 (1 being none and 10 being the most) how much do you think EarthStrike's "
-                                      "strategy of a general strike is the right strategy for change?")
-            responses[u].append((await client.wait_for_message(author=u, check=check)).content)
-            await client.send_message(u, "What do you think your partner did well?")
-            responses[u].append((await client.wait_for_message(author=u)).content)
-            await client.send_message(u, "How do you think your partner could improve?")
-            responses[u].append((await client.wait_for_message(author=u)).content)
-            await client.send_message(u, "Your answers have been recorded. Thank you!")
+        # Administer exit survey
+        await client.send_message(a,
+                                  "On a scale of 1-10 (1 being none and 10 being the most) how much would you estimate you "
+                                  "know about EarthStrike after the conversation?")
+        response.append((await client.wait_for_message(author=a, check=check)).content)
+        await client.send_message(a,
+                                  "On a scale of 1-10 (1 being none and 10 being the most) how much would you estimate you are "
+                                  "concerned about climate change after the conversation?")
+        response.append((await client.wait_for_message(author=a, check=check)).content)
+        await client.send_message(a,
+                                  "On a scale of 1-10 (1 being none and 10 being the most) how much do you think EarthStrike's "
+                                  "strategy of a general strike is the right strategy for change?")
+        response.append((await client.wait_for_message(author=a, check=check)).content)
+        await client.send_message(a, "What do you think your partner did well?")
+        response.append((await client.wait_for_message(author=a)).content)
+        await client.send_message(a, "How do you think your partner could improve?")
+        response.append((await client.wait_for_message(author=a)).content)
+        await client.send_message(a, "Your answers have been recorded. Thank you!")
 
         print(f"Committing Session [{session_id}]({a}, {b}) to db...")
-        a_uuid = str(uuid.uuid4())
         self.cursor.execute("INSERT INTO response VALUES (?,?,?,?,?,?,?,?)",
-                            (a_uuid, a.id, b.id, *responses[a]))
-        b_uuid = str(uuid.uuid4())
-        self.cursor.execute("INSERT INTO response VALUES (?,?,?,?,?,?,?,?)",
-                            (b_uuid, b.id, a.id, *responses[b]))
-        self.cursor.execute("INSERT INTO session VALUES (?,?,?,?,?,?,?)",
-                            (session_id, int(time.time()), a.id, b.id, session_id, a_uuid, b_uuid))
+                            (session_id, b.id, a.id, *response))
+        self.cursor.execute("INSERT INTO session VALUES (?,?,?,?,?,?)",
+                            (session_id, int(time.time()), a.id, b.id, session_id, session_id))
         self.db.commit()
         print(f"Session [{session_id}]({a}, {b}) complete!")
 
