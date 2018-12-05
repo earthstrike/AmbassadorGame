@@ -20,8 +20,13 @@ PROFESSIONS = ["student", "retail salesperson", "cashier", "office clerk", "food
 BOT_PREFIX = "$"
 TOKEN = os.environ.get('DISCORD_BOT_TOKEN')
 SERVER_ID = os.environ.get('DISCORD_SERVER_ID')
-PREP_TIME = 20  # 30
-SESSION_TIME = 10  # 120
+if os.environ.get('DISCORD_TEST_MODE') == '1':
+    PREP_TIME = 20  # 30
+    SESSION_TIME = 10  # 120
+else:
+    PREP_TIME = 30
+    SESSION_TIME = 120
+
 
 client = Bot(command_prefix=BOT_PREFIX)
 
@@ -176,7 +181,6 @@ class Canvasser(object):
                             (session_id, int(time.time()), a.id, b.id, session_id, session_id))
         self.db.commit()
         print(f"Session [{session_id}]({a}, {b}) complete!")
-
 
 canv = Canvasser(SERVER_ID)
 
