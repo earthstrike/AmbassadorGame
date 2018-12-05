@@ -9,9 +9,9 @@ This is a discord game to practice being an ambassador for the EarthStrike movem
 ## Running the bot
 Set environment variables:
 
-DISCORD_BOT_TOKEN, DISCORD_SERVER_ID with respective information for your server. The Bot token comes from discordapp.com developer. The server id can be obtained from the server by right-clicking on the server, and clicking on the "copy id" menu. DISCORD_TEST_MODE can be set to enter test mode.
+`DISCORD_BOT_TOKEN`, `DISCORD_SERVER_ID` with respective information for your server. The Bot token comes from discordapp.com developer. The server id can be obtained from the server by right-clicking on the server, and clicking on the "copy id" menu. `DISCORD_TEST_MODE` can be set to `1` to enter test mode.
 
-python3.6 is recommended, although other versions may work. Once these variables are set, you can run
+Currently, the prolific usage of [f-strings](https://realpython.com/python-f-strings/) requires python3.6+. Once these variables are set, you can run
 `pip3 install -r requirements.txt
 python3 bot.py
 `
