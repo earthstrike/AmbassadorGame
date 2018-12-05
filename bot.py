@@ -20,6 +20,7 @@ PROFESSIONS = ["student", "retail salesperson", "cashier", "office clerk", "food
 BOT_PREFIX = "$"
 TOKEN = os.environ.get('DISCORD_BOT_TOKEN')
 SERVER_ID = os.environ.get('DISCORD_SERVER_ID')
+GAME_CHANNEL = 'AmbassadorGame'
 if os.environ.get('DISCORD_TEST_MODE') == '1':
     PREP_TIME = 20  # 30
     SESSION_TIME = 10  # 120
@@ -40,6 +41,19 @@ class Canvasser(object):
         self.db = sqlite3.connect('AmbassadorResults.db')
         self.cursor = self.db.cursor()
         self.init_db()
+        self.game_channel_id = -1
+
+
+    async def init_channel(self):
+        """ Create the voice channel, that is used for matching users """
+        server = client.get_server(self.server_id)
+        for channel in server.channels:
+            if channel.name == GAME_CHANNEL:
+                self.game_channel_id = channel.id
+        if self.game_channel_id == -1:
+            my_perms = PermissionOverwrite(speak=False)
+            ch = await client.create_channel(server, GAME_CHANNEL, (server.default_role, my_perms), type=ChannelType.voice)
+            self.game_channel_id = ch.id
 
     def init_db(self):
         self.cursor.execute("CREATE TABLE IF NOT EXISTS session "
@@ -123,11 +137,8 @@ class Canvasser(object):
         ch = await client.create_channel(server, f"canvas_game:{a.name}-{b.name}",
                                          (server.default_role, everyone_perms),
                                          (a, my_perms), (b, my_perms), type=ChannelType.voice)
-        invite = await client.create_invite(destination=ch, xkcd=True, max_uses=2)
-        await client.send_message(a, f"Please connect to: {invite.url}")
-        await client.send_message(b, f"Please connect to: {invite.url}")
 
-        # Force members into voice channel
+        # Move members into voice channel
         a_member = server.get_member(a.id)
         b_member = server.get_member(b.id)
         await client.move_member(a_member, ch)
@@ -189,17 +200,22 @@ canv = Canvasser(SERVER_ID)
 
 @client.event
 async def on_ready():
+    await canv.init_channel()
     print("Done")
 
 
-@client.command(name='join',
-                description='Have user join the available member pool for canvasing partners',
-                pass_context=True)
-async def join(context):
-    if context.message.author not in canv.active_users:
-        canv.active_users.append(context.message.author)
-        await canv.try_match(context.message.author)
-
+@client.event
+async def on_voice_state_update(before, after):
+    """ Determine when a user has entered or left the main game voice channel, and start them in the game if they enter the channel """
+    if before.voice.voice_channel == after.voice.voice_channel:
+        return
+    if not after.voice.voice_channel is None and after.voice.voice_channel.name == GAME_CHANNEL:
+        if after not in canv.active_users:
+            canv.active_users.append(after)
+            await canv.try_match(after)
+    elif not before.voice.voice_channel is None and before.voice.voice_channel.name == GAME_CHANNEL:
+        if after not in canv.active_users:
+           canv.active_users.remove(after) 
 
 print("Starting CanvasBot...", end='', flush=True)
 try:
