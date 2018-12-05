@@ -47,11 +47,11 @@ class Canvasser(object):
                             " datetime INTEGER NOT NULL,"
                             " personA TEXT NOT NULL,"
                             " personB TEXT NOT NULL,"
-                            " trainee_persona INTEGER NOT NULL,"
+                            " actor_persona INTEGER NOT NULL,"
                             " personB_response TEXT NOT NULL,"
-                            "   FOREIGN KEY (trainee_persona) REFERENCES trainee_persona(uuid),"
+                            "   FOREIGN KEY (actor_persona) REFERENCES actor_persona(uuid),"
                             "   FOREIGN KEY (personB_response) REFERENCES response(uuid));")
-        self.cursor.execute("CREATE TABLE IF NOT EXISTS trainee_persona"
+        self.cursor.execute("CREATE TABLE IF NOT EXISTS actor_persona"
                             "(uuid TEXT NOT NULL PRIMARY KEY,"
                             " discord_user INTEGER NOT NULL,"
                             " age INTEGER NOT NULL,"
@@ -80,7 +80,7 @@ class Canvasser(object):
         await client.send_message(author, "You will be matched with someone shortly. Please wait....")
 
     async def match(self, a, b):
-        """ Match two people with one as the random person, and the other as the trainee """
+        """ Match two people with one as the actor, and the other as the persuader """
         if random.random() > .5:
             a, b = b, a
 
@@ -99,7 +99,7 @@ class Canvasser(object):
         msg_b = f"""You are about to be matched with a partner playing a role. Be kind. You will have {SESSION_TIME // 60} minutes to get your partner more interested in EarthStrike. You will need to assess your partner's concerns tell them about EarthSrike if they haven't heard of it, tell them about the dangers we face from global warming, and help convince them that EarthStrike's strategy is the right approach. Take a deep breath and get ready. You will be connected in {PREP_TIME} seconds to a partner."""
 
         session_id = str(uuid.uuid4())
-        self.cursor.execute("INSERT INTO trainee_persona VALUES (?,?,?,?,?,?)",
+        self.cursor.execute("INSERT INTO actor_persona VALUES (?,?,?,?,?,?)",
                             (session_id, a.id, age, profession, gs_probability, global_warming_concern))
         self.db.commit()
 
@@ -128,8 +128,10 @@ class Canvasser(object):
         await client.send_message(b, f"Please connect to: {invite.url}")
 
         # Force members into voice channel
-        await client.move_member(a, ch)
-        await client.move_member(b, ch)
+        a_member = server.get_member(a.id)
+        b_member = server.get_member(b.id)
+        await client.move_member(a_member, ch)
+        await client.move_member(b_member, ch)
 
         print(f"Waiting for users {a} and {b} to join Voice Channel...")
 
