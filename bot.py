@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 import random
 import sqlite3
@@ -8,6 +9,11 @@ import uuid
 import numpy as np
 from discord import PermissionOverwrite, ChannelType
 from discord.ext.commands import Bot
+
+# Initialize default logger to write to file AND stdout
+logging.basicConfig(level=logging.INFO, filename="CanvasBot.log", filemode="a+",
+                    format="%(asctime)-15s %(levelname)-8s %(message)s")
+logging.getLogger().addHandler(logging.StreamHandler())
 
 PROFESSIONS = ["student", "retail salesperson", "cashier", "office clerk", "food worker", "nurse", "waiter/waitress",
                "custom service representative", "janitor", "manual laborer", "stock clerk or order filler", "manager",
@@ -21,7 +27,7 @@ BOT_PREFIX = "$"
 TOKEN = os.environ.get('DISCORD_BOT_TOKEN')
 SERVER_ID = os.environ.get('DISCORD_SERVER_ID')
 if os.environ.get('DISCORD_TEST_MODE') == '1':
-    print("TEST_MODE enabled")
+    logging.info("TEST_MODE enabled")
     PREP_TIME = 10
     SESSION_TIME = 10
 else:
@@ -112,7 +118,7 @@ class Canvasser(object):
         self.matched[a] = b
         self.matched[b] = a
 
-        print(f"Created new session [{session_id}]:({a}, {b})")
+        logging.info(f"Created new session [{session_id}]:({a}, {b})")
         await asyncio.sleep(PREP_TIME)
         await self.start_voice(a, b, session_id)
 
@@ -136,25 +142,25 @@ class Canvasser(object):
         await client.move_member(a_member, ch)
         await client.move_member(b_member, ch)
 
-        print(f"Waiting for users {a} and {b} to join Voice Channel...")
+        logging.info(f"Waiting for users {a} and {b} to join Voice Channel...")
 
         async def ch_filled():
             """ Ensure both members have joined the voice chat. """
-            while not len(ch.voice_members) == 2:
+            while not len(client.get_channel(ch.id).voice_members) == 2:
                 await asyncio.sleep(.1)
 
         try:
             await asyncio.wait_for(ch_filled(), PREP_TIME)
         except asyncio.TimeoutError:
-            print(f"Members didn't connect. Closing session {session_id}...")
+            logging.info(f"Members didn't connect. Closing session {session_id}...")
             await self.close_session(a, b, ch)
         else:
-            print(f"Beginning Session [{session_id}]({a}, {b})...")
+            logging.info(f"Beginning Session [{session_id}]({a}, {b})...")
             await asyncio.sleep(SESSION_TIME)
             await self.end_voice(a, b, ch, session_id)
 
     async def close_session(self, a, b, ch):
-        print(f"Deleting channel {ch}...")
+        logging.info(f"Deleting channel {ch}...")
         await client.delete_channel(ch)
         self.active_users.remove(a)
         self.active_users.remove(b)
@@ -163,7 +169,7 @@ class Canvasser(object):
 
     async def end_voice(self, a, b, ch, session_id):
         """ End the voice channel message """
-        print(f"Ending Session [{session_id}]({a}, {b})...")
+        logging.info(f"Ending Session [{session_id}]({a}, {b})...")
         await self.close_session(a, b, ch)
 
         response = []
@@ -194,13 +200,13 @@ class Canvasser(object):
         response.append((await client.wait_for_message(author=a)).content)
         await client.send_message(a, "Your answers have been recorded. Thank you!")
 
-        print(f"Committing Session [{session_id}]({a}, {b}) to db...")
+        logging.info(f"Committing Session [{session_id}]({a}, {b}) to db...")
         self.cursor.execute("INSERT INTO response VALUES (?,?,?,?,?,?,?,?)",
                             (session_id, b.id, a.id, *response))
         self.cursor.execute("INSERT INTO session VALUES (?,?,?,?,?,?)",
                             (session_id, int(time.time()), a.id, b.id, session_id, session_id))
         self.db.commit()
-        print(f"Session [{session_id}]({a}, {b}) complete!")
+        logging.info(f"Session [{session_id}]({a}, {b}) complete!")
 
 
 canv = Canvasser(SERVER_ID)
@@ -208,7 +214,7 @@ canv = Canvasser(SERVER_ID)
 
 @client.event
 async def on_ready():
-    print("Done")
+    logging.info("CanvasBot started")
 
 
 @client.command(name='join',
@@ -220,10 +226,10 @@ async def join(context):
         await canv.try_match(context.message.author)
 
 
-print("Starting CanvasBot...", end='', flush=True)
+logging.info("Starting CanvasBot...")
 try:
     client.run(TOKEN)
 finally:
-    print("Closing database...", end='', flush=True)
+    logging.info("Closing database...")
     canv.db.close()
-    print("Done.")
+    logging.info("Done")
