@@ -21,12 +21,12 @@ BOT_PREFIX = "$"
 TOKEN = os.environ.get('DISCORD_BOT_TOKEN')
 SERVER_ID = os.environ.get('DISCORD_SERVER_ID')
 if os.environ.get('DISCORD_TEST_MODE') == '1':
-    PREP_TIME = 20  # 30
-    SESSION_TIME = 10  # 120
+    print("TEST_MODE enabled")
+    PREP_TIME = 10
+    SESSION_TIME = 10
 else:
     PREP_TIME = 30
     SESSION_TIME = 120
-
 
 client = Bot(command_prefix=BOT_PREFIX)
 
@@ -81,6 +81,9 @@ class Canvasser(object):
 
     async def match(self, a, b):
         """ Match two people with one as the actor, and the other as the persuader """
+        if a in self.waiting: self.waiting.remove(a)
+        if b in self.waiting: self.waiting.remove(b)
+
         if random.random() > .5:
             a, b = b, a
 
@@ -135,18 +138,33 @@ class Canvasser(object):
 
         print(f"Waiting for users {a} and {b} to join Voice Channel...")
 
-        async def ch_filled(): return len(ch.voice_members) == 2
+        async def ch_filled():
+            """ Ensure both members have joined the voice chat. """
+            while not len(ch.voice_members) == 2:
+                await asyncio.sleep(.1)
 
-        await asyncio.wait_for(ch_filled(), PREP_TIME)
-        print(f"Beginning Session [{session_id}]({a}, {b})...")
-        await asyncio.sleep(SESSION_TIME)
-        await self.end_voice(a, b, ch, session_id)
+        try:
+            await asyncio.wait_for(ch_filled(), PREP_TIME)
+        except asyncio.TimeoutError:
+            print(f"Members didn't connect. Closing session {session_id}...")
+            await self.close_session(a, b, ch)
+        else:
+            print(f"Beginning Session [{session_id}]({a}, {b})...")
+            await asyncio.sleep(SESSION_TIME)
+            await self.end_voice(a, b, ch, session_id)
+
+    async def close_session(self, a, b, ch):
+        print(f"Deleting channel {ch}...")
+        await client.delete_channel(ch)
+        self.active_users.remove(a)
+        self.active_users.remove(b)
+        del self.matched[a]
+        del self.matched[b]
 
     async def end_voice(self, a, b, ch, session_id):
         """ End the voice channel message """
-        await client.delete_channel(ch)
-        del self.matched[a]
-        del self.matched[b]
+        print(f"Ending Session [{session_id}]({a}, {b})...")
+        await self.close_session(a, b, ch)
 
         response = []
 
@@ -184,6 +202,7 @@ class Canvasser(object):
         self.db.commit()
         print(f"Session [{session_id}]({a}, {b}) complete!")
 
+
 canv = Canvasser(SERVER_ID)
 
 
@@ -205,6 +224,6 @@ print("Starting CanvasBot...", end='', flush=True)
 try:
     client.run(TOKEN)
 finally:
-    print("Closing database", end='', flush=True)
+    print("Closing database...", end='', flush=True)
     canv.db.close()
     print("Done.")
