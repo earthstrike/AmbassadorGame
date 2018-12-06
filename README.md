@@ -17,4 +17,4 @@ python3 bot.py
 `
 
 ## Joining the game
-You can message the bot '$join' to join the game.
+You can join the game by having at least 2 users enter the "AmbassadorGame" channel. You should then get a PM from your bot with more instructions. 
