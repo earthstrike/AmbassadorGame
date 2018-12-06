@@ -27,13 +27,15 @@ BOT_PREFIX = "$"
 TOKEN = os.environ.get('DISCORD_BOT_TOKEN')
 SERVER_ID = os.environ.get('DISCORD_SERVER_ID')
 GAME_CHANNEL = 'AmbassadorGame'
+SESSION_CHANNEL_PREFIX = "canvas_game:"
 if os.environ.get('DISCORD_TEST_MODE') == '1':
     logging.info("TEST_MODE enabled")
-    PREP_TIME = 10
-    SESSION_TIME = 10
+    PREP_TIME = 3
+    SESSION_TIME = 3
 else:
     PREP_TIME = 30
     SESSION_TIME = 120
+
 
 client = Bot(command_prefix=BOT_PREFIX)
 
@@ -42,6 +44,7 @@ class Canvasser(object):
     def __init__(self, server_id):
         self.server_id = server_id
         self.active_users = []
+        self.active_channels = []
         self.matched = {}
         self.waiting = []
         self.db = sqlite3.connect('AmbassadorResults.db')
@@ -49,6 +52,15 @@ class Canvasser(object):
         self.init_db()
         self.game_channel_id = -1
 
+    async def clean_channels(self):
+        """ Delete any stray 1-on-1 channels that might be leftover. """
+        server = client.get_server(self.server_id)
+        delete_list = []
+        for channel in server.channels:
+            if channel.name.startswith(SESSION_CHANNEL_PREFIX):
+                delete_list.append(channel.id)
+        for cid in delete_list:
+            await client.delete_channel(client.get_channel(cid))
 
     async def init_channel(self):
         """ Create the voice channel, that is used for matching users """
@@ -58,7 +70,8 @@ class Canvasser(object):
                 self.game_channel_id = channel.id
         if self.game_channel_id == -1:
             my_perms = PermissionOverwrite(speak=False)
-            ch = await client.create_channel(server, GAME_CHANNEL, (server.default_role, my_perms), type=ChannelType.voice)
+            ch = await client.create_channel(server, GAME_CHANNEL, (server.default_role, my_perms),
+                                             type=ChannelType.voice)
             self.game_channel_id = ch.id
 
     def init_db(self):
@@ -143,9 +156,10 @@ class Canvasser(object):
         server = client.get_server(self.server_id)
         if server is None:
             raise ConnectionError(f"Cannot connect to Server({SERVER_ID})")
-        ch = await client.create_channel(server, f"canvas_game:{a.name}-{b.name}",
+        ch = await client.create_channel(server, f"{SESSION_CHANNEL_PREFIX}{a.name}-{b.name}",
                                          (server.default_role, everyone_perms),
                                          (a, my_perms), (b, my_perms), type=ChannelType.voice)
+        self.active_channels.append(ch)
 
         # Move members into voice channel
         a_member = server.get_member(a.id)
@@ -177,6 +191,7 @@ class Canvasser(object):
         self.active_users.remove(b)
         del self.matched[a]
         del self.matched[b]
+        self.active_channels.remove(ch)
 
     async def end_voice(self, a, b, ch, session_id):
         """ End the voice channel message """
@@ -219,34 +234,47 @@ class Canvasser(object):
         self.db.commit()
         logging.info(f"Session [{session_id}]({a}, {b}) complete!")
 
+    async def cleanup(self):
+        logging.info("Cleaning up CanvasBot.")
+        self.db.close()
+        for channel in self.active_channels:
+            logging.info(f"Deleting channel {channel}")
+            await client.delete_channel(channel)
+        await self.clean_channels()  # Get any stray channels that somehow survived.
+
 
 canv = Canvasser(SERVER_ID)
 
 
 @client.event
 async def on_ready():
+    await canv.clean_channels()
     await canv.init_channel()
-    print("Done")
     logging.info("CanvasBot started")
+
+@client.event
+async def on_error(event, *args, **kwargs):
+    logging.error(f"Error created by event {event}. Cleaning up and exiting.")
+    await canv.cleanup()
+    exit()
 
 
 @client.event
 async def on_voice_state_update(before, after):
     """ Determine when a user has entered or left the main game voice channel, and start them in the game if they enter the channel """
+    if before.bot:
+        return
     if before.voice.voice_channel == after.voice.voice_channel:
         return
-    if not after.voice.voice_channel is None and after.voice.voice_channel.name == GAME_CHANNEL:
+    if after.voice.voice_channel is not None and after.voice.voice_channel.name == GAME_CHANNEL:
         if after not in canv.active_users:
+            logging.info(f"User {after} is ACTIVE")
             canv.active_users.append(after)
             await canv.try_match(after)
-    elif not before.voice.voice_channel is None and before.voice.voice_channel.name == GAME_CHANNEL:
+    elif before.voice.voice_channel is not None and before.voice.voice_channel.name == GAME_CHANNEL:
         if after not in canv.active_users:
-           canv.active_users.remove(after) 
+            canv.active_users.remove(after)
+
 
 logging.info("Starting CanvasBot...")
-try:
-    client.run(TOKEN)
-finally:
-    logging.info("Closing database...")
-    canv.db.close()
-    logging.info("Done")
+client.run(TOKEN)
