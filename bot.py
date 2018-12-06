@@ -27,6 +27,7 @@ BOT_PREFIX = "$"
 TOKEN = os.environ.get('DISCORD_BOT_TOKEN')
 SERVER_ID = os.environ.get('DISCORD_SERVER_ID')
 GAME_CHANNEL = 'AmbassadorGame'
+
 if os.environ.get('DISCORD_TEST_MODE') == '1':
     logging.info("TEST_MODE enabled")
     PREP_TIME = 10
@@ -49,16 +50,15 @@ class Canvasser(object):
         self.init_db()
         self.game_channel_id = -1
 
-
     async def init_channel(self):
-        """ Create the voice channel, that is used for matching users """
+        """ Create permanent channels for the game """
         server = client.get_server(self.server_id)
         for channel in server.channels:
             if channel.name == GAME_CHANNEL:
                 self.game_channel_id = channel.id
         if self.game_channel_id == -1:
             my_perms = PermissionOverwrite(speak=False)
-            ch = await client.create_channel(server, GAME_CHANNEL, (server.default_role, my_perms), type=ChannelType.voice)
+            ch = await client.create_channel(server, GAME_CHANNEL, (server.default_role, my_perms), type=ChannelType.text)
             self.game_channel_id = ch.id
 
     def init_db(self):
@@ -76,8 +76,8 @@ class Canvasser(object):
                             " discord_user INTEGER NOT NULL,"
                             " age INTEGER NOT NULL,"
                             " profession TEXT NOT NULL,"
-                            " gs_prob REAL NOT NULL,"
-                            " gw_concern REAL NOT NULL);")
+                            " gs_prob INTEGER NOT NULL,"
+                            " gw_concern INTEGER NOT NULL);")
         self.cursor.execute("CREATE TABLE IF NOT EXISTS response"
                             "(uuid TEXT NOT NULL PRIMARY KEY,"
                             " discord_user INTEGER NOT NULL,"
@@ -88,6 +88,17 @@ class Canvasser(object):
                             " partner_pro TEXT NOT NULL, "
                             " partner_con TEXT NOT NULL );")
         self.db.commit()
+
+    async def show_feedback(self, session):
+        """ Show feedback to the persuader after the actor rates their performance"""
+        self.cursor.execute("select age,profession,gs_prob,gw_concern FROM actor_persona WHERE uuid=?",(session,))
+        actor = self.cursor.fetchall()[0]
+        self.cursor.execute("select knowledge, concern, strategy, partner_pro, partner_con, discord_partner FROM response WHERE uuid=?",(session,))
+        response = self.cursor.fetchall()[0]
+        message = f"You were partner was acting as {actor[0]} year old {actor[1]}. Your conversation started with {actor[2]}/10 concern for global warming and ended with {response[1]}/10 concern. Your conversation started with {actor[2]}/10 belief in EarthStrike's strategy and ended with {response[2]}/10 belief in EarthStrike's strategy.\nYou did well: {response[3]}\nYou could improve with: {response[4]}"
+        server = client.get_server(self.server_id)
+        user = server.get_member(str(response[5]))
+        await client.send_message(user, message)
 
     async def try_match(self, author):
         """ See if we can find someone to match with, who we haven't already matched with """
@@ -109,17 +120,17 @@ class Canvasser(object):
 
         age = random.randint(18, 58)
         profession = random.choice(PROFESSIONS)
-        heard_of = np.random.choice(range(1, 11),
-                                    p=[.9, .05, 0.00625, 0.00625, 0.00625, 0.00625, 0.00625, 0.00625, 0.00625, 0.00625])
-        gs_probability = np.random.choice(range(1, 11),
+        heard_of = int(np.random.choice(range(1, 11),
+                                    p=[.9, .05, 0.00625, 0.00625, 0.00625, 0.00625, 0.00625, 0.00625, 0.00625, 0.00625]))
+        gs_probability = int(np.random.choice(range(1, 11),
                                           p=[.9, .05, 0.00625, 0.00625, 0.00625, 0.00625, 0.00625, 0.00625, 0.00625,
-                                             0.00625])
-        global_warming_concern = np.random.choice(range(1, 11),
-                                                  p=[.2, .1, 0.065, 0.067, 0.067, 0.067, 0.067, 0.067, 0.1, 0.2])
+                                             0.00625]))
+        global_warming_concern = int(np.random.choice(range(1, 11),
+                                                  p=[.2, .1, 0.065, 0.067, 0.067, 0.067, 0.067, 0.067, 0.1, 0.2]))
 
-        msg_a = f"""You are a {age} year old {profession}. On a scale of 1-10 (1 being none and 10 being the most), you have a strike awareness of {heard_of}. Possibility of strike succeeding {gs_probability}. Your concern about global warming is {global_warming_concern}. You will be connected in {PREP_TIME} seconds to a partner. Take a deep breath and get in character. You will give feedback after the session is over."""
+        msg_a = f"""You are a {age} year old {profession}.\nOn a scale of 1-10 (1 being none and 10 being the most), you have a strike awareness of {heard_of}.\nPossibility of strike succeeding {gs_probability}.\nYour concern about global warming is {global_warming_concern}.\nYou will be connected in {PREP_TIME} seconds to a partner. Take a deep breath and get in character. You will give feedback after the session is over."""
 
-        msg_b = f"""You are about to be matched with a partner playing a role. Be kind. You will have {SESSION_TIME // 60} minutes to get your partner more interested in EarthStrike. You will need to assess your partner's concerns tell them about EarthSrike if they haven't heard of it, tell them about the dangers we face from global warming, and help convince them that EarthStrike's strategy is the right approach. Take a deep breath and get ready. You will be connected in {PREP_TIME} seconds to a partner."""
+        msg_b = f"""You are about to be matched with a partner playing a role. Be kind. You will have {SESSION_TIME // 60} minutes and {SESSION_TIME % 60} seconds to get your partner more interested in EarthStrike. You will need to assess your partner's concerns tell them about EarthSrike if they haven't heard of it, tell them about the dangers we face from global warming, and help convince them that EarthStrike's strategy is the right approach. Take a deep breath and get ready. You will be connected in {PREP_TIME} seconds to a partner."""
 
         session_id = str(uuid.uuid4())
         self.cursor.execute("INSERT INTO actor_persona VALUES (?,?,?,?,?,?)",
@@ -218,6 +229,7 @@ class Canvasser(object):
                             (session_id, int(time.time()), a.id, b.id, session_id, session_id))
         self.db.commit()
         logging.info(f"Session [{session_id}]({a}, {b}) complete!")
+        await self.show_feedback(session_id)
 
 
 canv = Canvasser(SERVER_ID)
