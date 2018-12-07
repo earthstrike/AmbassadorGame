@@ -7,7 +7,7 @@ import time
 import uuid
 
 import numpy as np
-from discord import PermissionOverwrite, ChannelType
+from discord import PermissionOverwrite, Client
 from discord.ext.commands import Bot
 
 # Initialize default logger to write to file AND stdout
@@ -25,7 +25,7 @@ PROFESSIONS = ["student", "retail salesperson", "cashier", "office clerk", "food
 
 BOT_PREFIX = "$"
 TOKEN = os.environ.get('DISCORD_BOT_TOKEN')
-SERVER_ID = os.environ.get('DISCORD_SERVER_ID')
+GUILD_ID = int(os.environ.get('DISCORD_SERVER_ID'))
 GAME_CHANNEL = 'Ambassador Game Queue'
 SESSION_CHANNEL_PREFIX = "canvas_game:"
 if os.environ.get('DISCORD_TEST_MODE') == '1':
@@ -34,15 +34,14 @@ if os.environ.get('DISCORD_TEST_MODE') == '1':
     SESSION_TIME = 3
 else:
     PREP_TIME = 30
-    SESSION_TIME = 300 
+    SESSION_TIME = 300
 
-
-client = Bot(command_prefix=BOT_PREFIX)
+client = Bot(command_prefix=BOT_PREFIX, bot=True)
 
 
 class Canvasser(object):
-    def __init__(self, server_id):
-        self.server_id = server_id
+    def __init__(self, guild_id):
+        self.guild_id = guild_id
         self.active_users = []
         self.active_channels = []
         self.matched = {}
@@ -51,23 +50,26 @@ class Canvasser(object):
         self.cursor = self.db.cursor()
         self.init_db()
         self.game_channel_id = -1
+        self.cat = None
+        self.category_channel_id = -1
 
     async def clean_channels(self):
         """ Delete any stray 1-on-1 channels that might be leftover. """
-        server = client.get_server(self.server_id)
+        guild = client.get_guild(self.guild_id)
         delete_list = []
-        for channel in server.channels:
+        for channel in guild.channels:
             if channel.name.startswith(SESSION_CHANNEL_PREFIX):
                 delete_list.append(channel.id)
         for cid in delete_list:
-            await client.delete_channel(client.get_channel(cid))
+            await guild.delete_channel(client.get_channel(cid))
 
     async def init_channel(self):
         """ Create permanent channels for the game """
-        server = client.get_server(self.server_id)
-        for channel in server.channels:
+        guild = client.get_guild(self.guild_id)
+        for channel in guild.channels:
             if channel.name == GAME_CHANNEL:
                 self.game_channel_id = channel.id
+                self.category_channel_id = channel.category.id
                 # Add existing users to the game
                 for member in channel.voice_members:
                     if not member.bot:
@@ -76,9 +78,10 @@ class Canvasser(object):
                         await canv.try_match(member)
         if self.game_channel_id == -1:
             my_perms = PermissionOverwrite(speak=False)
-            ch = await client.create_channel(server, GAME_CHANNEL, (server.default_role, my_perms),
-                                             type=ChannelType.voice)
+            ch = await guild.create_voice_channel(GAME_CHANNEL, (guild.default_role, my_perms))
             self.game_channel_id = ch.id
+            self.cat = await guild.create_category_channel('Ambassador Games')
+            self.category_channel_id = self.cat.id
 
     def init_db(self):
         self.cursor.execute("CREATE TABLE IF NOT EXISTS session "
@@ -110,14 +113,20 @@ class Canvasser(object):
 
     async def show_feedback(self, session):
         """ Show feedback to the persuader after the actor rates their performance"""
-        self.cursor.execute("select age,profession,gs_prob,gw_concern FROM actor_persona WHERE uuid=?",(session,))
+        self.cursor.execute("select age,profession,gs_prob,gw_concern FROM actor_persona WHERE uuid=?", (session,))
         actor = self.cursor.fetchall()[0]
-        self.cursor.execute("select knowledge, concern, strategy, partner_pro, partner_con, discord_user FROM response WHERE uuid=?",(session,))
+        self.cursor.execute(
+            "select knowledge, concern, strategy, partner_pro, partner_con, discord_user FROM response WHERE uuid=?",
+            (session,))
         response = self.cursor.fetchall()[0]
-        message = f"Your partner was acting as a {actor[0]} year old {actor[1]}. Your conversation started with {actor[2]}/10 concern for global warming and ended with {response[1]}/10 concern. Your conversation started with {actor[2]}/10 belief in EarthStrike's strategy and ended with {response[2]}/10 belief in EarthStrike's strategy.\nWhat you did well: *{response[3]}*\nThings you could improve on: *{response[4]}*"
-        server = client.get_server(self.server_id)
-        user = server.get_member(str(response[5]))
-        await client.send_message(user, message)
+        message = f"""Your partner was acting as a {actor[0]} year old {actor[1]}. Your conversation started with {actor[
+            2]}/10 concern for global warming and ended with {response[1]}/10 concern. Your conversation started with {
+        actor[2]}/10 belief in EarthStrike's strategy and ended with {response[
+            2]}/10 belief in EarthStrike's strategy.\nWhat you did well: *{response[
+            3]}*\nThings you could improve on: *{response[4]}*"""
+        guild = client.get_guild(self.guild_id)
+        user = guild.get_member(str(response[5]))
+        await user.create_dm().send(message)
 
     async def try_match(self, author):
         """ See if we can find someone to match with, who we haven't already matched with """
@@ -127,7 +136,7 @@ class Canvasser(object):
                 await self.match(author, user)
                 return
         self.waiting.append(author)
-        await client.send_message(author, "You will be matched with someone shortly. Please wait....")
+        await author.create_dm().send("You will be matched with someone shortly. Please wait....")
 
     async def match(self, a, b):
         """ Match two people with one as the actor, and the other as the persuader """
@@ -140,12 +149,13 @@ class Canvasser(object):
         age = random.randint(18, 58)
         profession = random.choice(PROFESSIONS)
         heard_of = int(np.random.choice(range(1, 11),
-                                    p=[.9, .05, 0.00625, 0.00625, 0.00625, 0.00625, 0.00625, 0.00625, 0.00625, 0.00625]))
+                                        p=[.9, .05, 0.00625, 0.00625, 0.00625, 0.00625, 0.00625, 0.00625, 0.00625,
+                                           0.00625]))
         gs_probability = int(np.random.choice(range(1, 11),
-                                          p=[.9, .05, 0.00625, 0.00625, 0.00625, 0.00625, 0.00625, 0.00625, 0.00625,
-                                             0.00625]))
+                                              p=[.9, .05, 0.00625, 0.00625, 0.00625, 0.00625, 0.00625, 0.00625, 0.00625,
+                                                 0.00625]))
         global_warming_concern = int(np.random.choice(range(1, 11),
-                                                  p=[.2, .1, 0.065, 0.067, 0.067, 0.067, 0.067, 0.067, 0.1, 0.2]))
+                                                      p=[.2, .1, 0.065, 0.067, 0.067, 0.067, 0.067, 0.067, 0.1, 0.2]))
 
         msg_a = f"""You are a {age} year old {profession}.\nOn a scale of 1-10 (1 being none and 10 being the most), you have a strike awareness of {heard_of}.\nPossibility of strike succeeding {gs_probability}.\nYour concern about global warming is {global_warming_concern}.\nYou will be connected in {PREP_TIME} seconds to a partner. Take a deep breath and get in character. You will give feedback after the session is over."""
 
@@ -156,8 +166,8 @@ class Canvasser(object):
                             (session_id, a.id, age, profession, gs_probability, global_warming_concern))
         self.db.commit()
 
-        await client.send_message(a, msg_a)
-        await client.send_message(b, msg_b)
+        await a.create_dm().send(msg_a)
+        await b.create_dm().send(msg_b)
 
         self.matched[a] = b
         self.matched[b] = a
@@ -170,19 +180,19 @@ class Canvasser(object):
         """ Begin voice chat session between two people """
         everyone_perms = PermissionOverwrite(read_messages=False)
         my_perms = PermissionOverwrite(read_messages=True)
-        server = client.get_server(self.server_id)
-        if server is None:
-            raise ConnectionError(f"Cannot connect to Server({SERVER_ID})")
-        ch = await client.create_channel(server, f"{SESSION_CHANNEL_PREFIX}{a.name}-{b.name}",
-                                         (server.default_role, everyone_perms),
-                                         (a, my_perms), (b, my_perms), type=ChannelType.voice)
+        guild = client.get_guild(self.guild_id)
+        if guild is None:
+            raise ConnectionError(f"Cannot connect to Guild({GUILD_ID})")
+        ch = await guild.create_voice_channel(f"{SESSION_CHANNEL_PREFIX}{a.name}-{b.name}",
+                                              (guild.default_role, everyone_perms),
+                                              (a, my_perms), (b, my_perms), category=self.cat)
         self.active_channels.append(ch)
 
         # Move members into voice channel
-        a_member = server.get_member(a.id)
-        b_member = server.get_member(b.id)
-        await client.move_member(a_member, ch)
-        await client.move_member(b_member, ch)
+        a_member = guild.get_member(a.id)
+        b_member = guild.get_member(b.id)
+        await a_member.edit(voice_channel=ch)
+        await b_member.edit(voice_channel=ch)
 
         logging.info(f"Waiting for users {a} and {b} to join Voice Channel...")
 
@@ -203,7 +213,7 @@ class Canvasser(object):
 
     async def close_session(self, a, b, ch):
         logging.info(f"Deleting channel {ch}...")
-        await client.delete_channel(ch)
+        await ch.delete()
         self.active_users.remove(a)
         self.active_users.remove(b)
         del self.matched[a]
@@ -220,7 +230,7 @@ class Canvasser(object):
         def check_for_pm(msg):
             """ Ensure message is in private messages """
             try:
-                return msg.server is None and msg.channel.is_private
+                return msg.guild is None and msg.channel.is_private
             except:
                 return False
 
@@ -232,23 +242,23 @@ class Canvasser(object):
                 return False
 
         # Administer exit survey
-        await client.send_message(a,
-                                  "On a scale of 1-10 (1 being none and 10 being the most) how much would you estimate you "
-                                  "know about EarthStrike after the conversation?")
-        response.append((await client.wait_for_message(author=a, check=check_number)).content)
-        await client.send_message(a,
-                                  "On a scale of 1-10 (1 being none and 10 being the most) how much would you estimate you are "
-                                  "concerned about climate change after the conversation?")
-        response.append((await client.wait_for_message(author=a, check=check_number)).content)
-        await client.send_message(a,
-                                  "On a scale of 1-10 (1 being none and 10 being the most) how much do you think EarthStrike's "
-                                  "strategy of a general strike is the right strategy for change?")
-        response.append((await client.wait_for_message(author=a, check=check_number)).content)
-        await client.send_message(a, "What do you think your partner did well?")
-        response.append((await client.wait_for_message(author=a, check=check_for_pm)).content)
-        await client.send_message(a, "How do you think your partner could improve?")
-        response.append((await client.wait_for_message(author=a, check=check_for_pm)).content)
-        await client.send_message(a, "Your answers have been recorded. Thank you!")
+        await a.create_dm().send(
+            "On a scale of 1-10 (1 being none and 10 being the most) how much would you estimate you "
+            "know about EarthStrike after the conversation?")
+        response.append((await client.wait_for('message', check=check_number)).content)
+        await a.create_dm().send(
+            "On a scale of 1-10 (1 being none and 10 being the most) how much would you estimate you are "
+            "concerned about climate change after the conversation?")
+        response.append((await client.wait_for('message', check=check_number)).content)
+        await a.create_dm().send(
+            "On a scale of 1-10 (1 being none and 10 being the most) how much do you think EarthStrike's "
+            "strategy of a general strike is the right strategy for change?")
+        response.append((await client.wait_for('message', check=check_number)).content)
+        await a.create_dm().send("What do you think your partner did well?")
+        response.append((await client.wait_for('message', check=check_for_pm)).content)
+        await a.create_dm().send("How do you think your partner could improve?")
+        response.append((await client.wait_for('message', check=check_for_pm)).content)
+        await a.create_dm().send("Your answers have been recorded. Thank you!")
 
         logging.info(f"Committing Session [{session_id}]({a}, {b}) to db...")
         self.cursor.execute("INSERT INTO response VALUES (?,?,?,?,?,?,?,?)",
@@ -264,11 +274,11 @@ class Canvasser(object):
         self.db.close()
         for channel in self.active_channels:
             logging.info(f"Deleting channel {channel}")
-            await client.delete_channel(channel)
+            await channel.delete()
         await self.clean_channels()  # Get any stray channels that somehow survived.
 
 
-canv = Canvasser(SERVER_ID)
+canv = Canvasser(GUILD_ID)
 
 
 @client.event
@@ -277,9 +287,10 @@ async def on_ready():
     await canv.init_channel()
     logging.info("CanvasBot started")
 
+
 @client.event
-async def on_error(event, *args, **kwargs):
-    logging.error(f"Error created by event {event}. Cleaning up and exiting.")
+async def on_error(error):
+    logging.error(f"Error created by event {error}. Cleaning up and exiting.")
     await canv.cleanup()
     exit()
 
