@@ -108,7 +108,7 @@ class Canvasser(object):
         actor = self.cursor.fetchall()[0]
         self.cursor.execute("select knowledge, concern, strategy, partner_pro, partner_con, discord_user FROM response WHERE uuid=?",(session,))
         response = self.cursor.fetchall()[0]
-        message = f"Your partner was acting as a {actor[0]} year old {actor[1]}. Your conversation started with {actor[2]}/10 concern for global warming and ended with {response[1]}/10 concern. Your conversation started with {actor[2]}/10 belief in EarthStrike's strategy and ended with {response[2]}/10 belief in EarthStrike's strategy.\nYou did well: {response[3]}\nYou could improve with: {response[4]}"
+        message = f"Your partner was acting as a {actor[0]} year old {actor[1]}. Your conversation started with {actor[2]}/10 concern for global warming and ended with {response[1]}/10 concern. Your conversation started with {actor[2]}/10 belief in EarthStrike's strategy and ended with {response[2]}/10 belief in EarthStrike's strategy.\nWhat you did well: *{response[3]}*\nThings you could improve on: *{response[4]}*"
         server = client.get_server(self.server_id)
         user = server.get_member(str(response[5]))
         await client.send_message(user, message)
@@ -211,10 +211,17 @@ class Canvasser(object):
 
         response = []
 
-        def check(msg):
-            """ Ensure message is a parsable integer in range 1-10"""
+        def check_for_pm(msg):
+            """ Ensure message is in private messages """
             try:
-                return 1 <= int(msg.content) <= 10
+                return msg.server is None and msg.channel.is_private
+            except:
+                return False
+
+        def check_number(msg):
+            """ Ensure message is a parsable integer in range 1-10 and in PMs"""
+            try:
+                return 1 <= int(msg.content) <= 10 and check_for_pm(msg)
             except:
                 return False
 
@@ -222,19 +229,19 @@ class Canvasser(object):
         await client.send_message(a,
                                   "On a scale of 1-10 (1 being none and 10 being the most) how much would you estimate you "
                                   "know about EarthStrike after the conversation?")
-        response.append((await client.wait_for_message(author=a, check=check)).content)
+        response.append((await client.wait_for_message(author=a, check=check_number)).content)
         await client.send_message(a,
                                   "On a scale of 1-10 (1 being none and 10 being the most) how much would you estimate you are "
                                   "concerned about climate change after the conversation?")
-        response.append((await client.wait_for_message(author=a, check=check)).content)
+        response.append((await client.wait_for_message(author=a, check=check_number)).content)
         await client.send_message(a,
                                   "On a scale of 1-10 (1 being none and 10 being the most) how much do you think EarthStrike's "
                                   "strategy of a general strike is the right strategy for change?")
-        response.append((await client.wait_for_message(author=a, check=check)).content)
+        response.append((await client.wait_for_message(author=a, check=check_number)).content)
         await client.send_message(a, "What do you think your partner did well?")
-        response.append((await client.wait_for_message(author=a)).content)
+        response.append((await client.wait_for_message(author=a, check=check_for_pm)).content)
         await client.send_message(a, "How do you think your partner could improve?")
-        response.append((await client.wait_for_message(author=a)).content)
+        response.append((await client.wait_for_message(author=a, check=check_for_pm)).content)
         await client.send_message(a, "Your answers have been recorded. Thank you!")
 
         logging.info(f"Committing Session [{session_id}]({a}, {b}) to db...")
