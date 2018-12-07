@@ -68,6 +68,12 @@ class Canvasser(object):
         for channel in server.channels:
             if channel.name == GAME_CHANNEL:
                 self.game_channel_id = channel.id
+                # Add existing users to the game
+                for member in channel.voice_members:
+                    if not member.bot:
+                        logging.info(f"User {member} is ACTIVE")
+                        canv.active_users.append(member)
+                        await canv.try_match(member)
         if self.game_channel_id == -1:
             my_perms = PermissionOverwrite(speak=False)
             ch = await client.create_channel(server, GAME_CHANNEL, (server.default_role, my_perms),
