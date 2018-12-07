@@ -34,7 +34,7 @@ if os.environ.get('DISCORD_TEST_MODE') == '1':
     SESSION_TIME = 3
 else:
     PREP_TIME = 30
-    SESSION_TIME = 120
+    SESSION_TIME = 300 
 
 
 client = Bot(command_prefix=BOT_PREFIX)
