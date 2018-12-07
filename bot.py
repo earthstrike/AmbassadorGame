@@ -26,7 +26,7 @@ PROFESSIONS = ["student", "retail salesperson", "cashier", "office clerk", "food
 BOT_PREFIX = "$"
 TOKEN = os.environ.get('DISCORD_BOT_TOKEN')
 SERVER_ID = os.environ.get('DISCORD_SERVER_ID')
-GAME_CHANNEL = 'AmbassadorGame'
+GAME_CHANNEL = 'Ambassador Game Queue'
 SESSION_CHANNEL_PREFIX = "canvas_game:"
 if os.environ.get('DISCORD_TEST_MODE') == '1':
     logging.info("TEST_MODE enabled")
