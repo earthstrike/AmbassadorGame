@@ -16,5 +16,7 @@ Currently, the prolific usage of [f-strings](https://realpython.com/python-f-str
 python3 bot.py
 `
 
+Note: This bot uses the discord.py rewrite 1.0.0, which is ahead of the current stable release. 
+
 ## Joining the game
 You can join the game by having at least 2 users enter the "AmbassadorGame" channel. You should then get a PM from your bot with more instructions. 

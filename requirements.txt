@@ -1,2 +1,2 @@
-discord
+-e git://github.com/Rapptz/discord.py@rewrite#egg=discord.py[voice]
 numpy
