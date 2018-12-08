@@ -7,7 +7,7 @@ import time
 import uuid
 
 import numpy as np
-from discord import PermissionOverwrite, Client
+from discord import PermissionOverwrite, DMChannel
 from discord.ext.commands import Bot
 
 # Initialize default logger to write to file AND stdout
@@ -55,12 +55,9 @@ class Canvasser(object):
     async def clean_channels(self):
         """ Delete any stray 1-on-1 channels that might be leftover. """
         guild = client.get_guild(self.guild_id)
-        delete_list = []
         for channel in guild.channels:
             if channel.name.startswith(SESSION_CHANNEL_PREFIX):
-                delete_list.append(channel.id)
-        for cid in delete_list:
-            await guild.delete_channel(client.get_channel(cid))
+                await channel.delete()
 
     async def init_channel(self):
         """ Create permanent channels for the game """
@@ -118,7 +115,8 @@ class Canvasser(object):
             "select knowledge, concern, strategy, partner_pro, partner_con, discord_user FROM response WHERE uuid=?",
             (session,))
         response = self.cursor.fetchall()[0]
-        message = f"""Your partner was acting as a {actor[0]} year old {actor[1]}. Your conversation started with {actor[
+        message = f"""Your partner was acting as a {actor[0]} year old {actor[1]}. Your conversation started with {
+        actor[
             2]}/10 concern for global warming and ended with {response[1]}/10 concern. Your conversation started with {
         actor[2]}/10 belief in EarthStrike's strategy and ended with {response[
             2]}/10 belief in EarthStrike's strategy.\nWhat you did well: *{response[
@@ -183,8 +181,8 @@ class Canvasser(object):
         if guild is None:
             raise ConnectionError(f"Cannot connect to Guild({GUILD_ID})")
         ch = await guild.create_voice_channel(f"{SESSION_CHANNEL_PREFIX}{a.name}-{b.name}",
-                                              (guild.default_role, everyone_perms),
-                                              (a, my_perms), (b, my_perms), category=client.get_channel(self.category_channel_id))
+                                              overwrites={guild.default_role: everyone_perms, a: my_perms, b: my_perms},
+                                              category=client.get_channel(self.category_channel_id))
         self.active_channels.append(ch)
 
         # Move members into voice channel
@@ -197,7 +195,7 @@ class Canvasser(object):
 
         async def ch_filled():
             """ Ensure both members have joined the voice chat. """
-            while not len(client.get_channel(ch.id).voice_members) == 2:
+            while not len(client.get_channel(ch.id).members) == 2:
                 await asyncio.sleep(.1)
 
         try:
@@ -212,12 +210,12 @@ class Canvasser(object):
 
     async def close_session(self, a, b, ch):
         logging.info(f"Deleting channel {ch}...")
+        self.active_channels.remove(ch)
         await ch.delete()
         self.active_users.remove(a)
         self.active_users.remove(b)
         del self.matched[a]
         del self.matched[b]
-        self.active_channels.remove(ch)
 
     async def end_voice(self, a, b, ch, session_id):
         """ End the voice channel message """
@@ -229,7 +227,7 @@ class Canvasser(object):
         def check_for_pm(msg):
             """ Ensure message is in private messages """
             try:
-                return msg.guild is None and msg.channel.is_private
+                return msg.guild is None and isinstance(msg.channel, DMChannel)
             except:
                 return False
 
@@ -241,23 +239,23 @@ class Canvasser(object):
                 return False
 
         # Administer exit survey
-        await a.create_dm().send(
+        await(await a.create_dm()).send(
             "On a scale of 1-10 (1 being none and 10 being the most) how much would you estimate you "
             "know about EarthStrike after the conversation?")
         response.append((await client.wait_for('message', check=check_number)).content)
-        await a.create_dm().send(
+        await(await a.create_dm()).send(
             "On a scale of 1-10 (1 being none and 10 being the most) how much would you estimate you are "
             "concerned about climate change after the conversation?")
         response.append((await client.wait_for('message', check=check_number)).content)
-        await a.create_dm().send(
+        await(await a.create_dm()).send(
             "On a scale of 1-10 (1 being none and 10 being the most) how much do you think EarthStrike's "
             "strategy of a general strike is the right strategy for change?")
         response.append((await client.wait_for('message', check=check_number)).content)
-        await a.create_dm().send("What do you think your partner did well?")
+        await(await a.create_dm()).send("What do you think your partner did well?")
         response.append((await client.wait_for('message', check=check_for_pm)).content)
-        await a.create_dm().send("How do you think your partner could improve?")
+        await(await a.create_dm()).send("How do you think your partner could improve?")
         response.append((await client.wait_for('message', check=check_for_pm)).content)
-        await a.create_dm().send("Your answers have been recorded. Thank you!")
+        await(await a.create_dm()).send("Your answers have been recorded. Thank you!")
 
         logging.info(f"Committing Session [{session_id}]({a}, {b}) to db...")
         self.cursor.execute("INSERT INTO response VALUES (?,?,?,?,?,?,?,?)",
@@ -288,8 +286,8 @@ async def on_ready():
 
 
 @client.event
-async def on_error():
-    logging.error(f"Error created by event {1}. Cleaning up and exiting.")
+async def on_error(error, *args, **kwargs):
+    logging.error(f"Error created by event {error}. Cleaning up and exiting.")
     await canv.cleanup()
     exit()
 
@@ -299,14 +297,14 @@ async def on_voice_state_update(member, before, after):
     """ Determine when a user has entered or left the main game voice channel, and start them in the game if they enter the channel """
     if member.bot:
         return
-    if before.voice.voice_channel == after.voice_channel:
+    if before.channel == after.channel:
         return
-    if after.voice_channel is not None and after.voice_channel.name == GAME_CHANNEL:
+    if after.channel is not None and after.channel.name == GAME_CHANNEL:
         if member not in canv.active_users:
             logging.info(f"User {member} is ACTIVE")
             canv.active_users.append(member)
             await canv.try_match(member)
-    elif before.voice_channel is not None and before.voice_channel.name == GAME_CHANNEL:
+    elif before.channel is not None and before.channel.name == GAME_CHANNEL:
         if member not in canv.active_users:
             canv.active_users.remove(member)
 
