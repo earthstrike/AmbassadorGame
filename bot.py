@@ -43,6 +43,7 @@ class Canvasser(object):
     def __init__(self, guild_id):
         self.guild_id = guild_id
         self.active_users = set()
+        self.survey_users = set()
         self.active_channels = []
         self.matched = {}
         self.waiting = set()
@@ -51,6 +52,12 @@ class Canvasser(object):
         self.init_db()
         self.game_channel_id = -1
         self.category_channel_id = -1
+
+    async def add_user(self, user):
+        if user in self.survey_users:
+            return False
+        self.active_users.add(user)
+        return True
 
     async def clean_channels(self):
         """ Delete any stray 1-on-1 channels that might be leftover. """
@@ -223,6 +230,7 @@ class Canvasser(object):
     async def end_voice(self, a, b, ch, session_id):
         """ End the voice channel message """
         logging.info(f"Ending Session [{session_id}]({a}, {b})...")
+        self.survey_users.add(a)
         await self.close_session(a, b, ch)
 
         response = []
@@ -267,6 +275,7 @@ class Canvasser(object):
                             (session_id, int(time.time()), a.id, b.id, session_id, session_id))
         self.db.commit()
         logging.info(f"Session [{session_id}]({a}, {b}) complete!")
+        self.survey_users.remove(a)
         await self.show_feedback(session_id)
 
     async def cleanup(self):
@@ -305,8 +314,9 @@ async def on_voice_state_update(member, before, after):
     if after.channel is not None and after.channel.name == GAME_CHANNEL:
         if member not in canv.active_users:
             logging.info(f"User {member} is ACTIVE")
-            canv.active_users.add(member)
-            await canv.try_match(member)
+            # Try to add a new user. If they still have an active survey kick them.
+            if await canv.add_user(member):
+                await canv.try_match(member)
     elif before.channel is not None and before.channel.name == GAME_CHANNEL:
         if member in canv.active_users:
             canv.active_users.remove(member)
