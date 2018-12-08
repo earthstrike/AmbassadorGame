@@ -122,8 +122,8 @@ class Canvasser(object):
             2]}/10 belief in EarthStrike's strategy.\nWhat you did well: *{response[
             3]}*\nThings you could improve on: *{response[4]}*"""
         guild = client.get_guild(self.guild_id)
-        user = guild.get_member(str(response[5]))
-        await user.create_dm().send(message)
+        user = guild.get_member(int(response[5]))
+        await (await user.create_dm()).send(message)
 
     async def try_match(self, author):
         """ See if we can find someone to match with, who we haven't already matched with """
@@ -227,7 +227,7 @@ class Canvasser(object):
         def check_for_pm(msg):
             """ Ensure message is in private messages """
             try:
-                return msg.guild is None and isinstance(msg.channel, DMChannel)
+                return not msg.author.bot and msg.content is not None and msg.guild is None and isinstance(msg.channel, DMChannel)
             except:
                 return False
 
