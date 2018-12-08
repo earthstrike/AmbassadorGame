@@ -42,10 +42,10 @@ client = Bot(command_prefix=BOT_PREFIX, bot=True)
 class Canvasser(object):
     def __init__(self, guild_id):
         self.guild_id = guild_id
-        self.active_users = []
+        self.active_users = set()
         self.active_channels = []
         self.matched = {}
-        self.waiting = []
+        self.waiting = set()
         self.db = sqlite3.connect('AmbassadorResults.db')
         self.cursor = self.db.cursor()
         self.init_db()
@@ -70,7 +70,7 @@ class Canvasser(object):
                 for member in channel.members:
                     if not member.bot:
                         logging.info(f"User {member} is ACTIVE")
-                        canv.active_users.append(member)
+                        canv.active_users.add(member)
                         await canv.try_match(member)
         if self.game_channel_id == -1:
             my_perms = PermissionOverwrite(speak=False)
@@ -127,12 +127,13 @@ class Canvasser(object):
 
     async def try_match(self, author):
         """ See if we can find someone to match with, who we haven't already matched with """
-        random.shuffle(self.waiting)
-        for user in self.waiting:
+        waiting = list(self.waiting)
+        random.shuffle(waiting)
+        for user in waiting:
             if user != author and (user not in self.matched or author not in self.matched[user]):
                 await self.match(author, user)
                 return
-        self.waiting.append(author)
+        self.waiting.add(author)
         await (await author.create_dm()).send("You will be matched with someone shortly. Please wait....")
 
     async def match(self, a, b):
@@ -212,8 +213,10 @@ class Canvasser(object):
         logging.info(f"Deleting channel {ch}...")
         self.active_channels.remove(ch)
         await ch.delete()
-        self.active_users.remove(a)
-        self.active_users.remove(b)
+        if a in self.active_users:
+            self.active_users.remove(a)
+        if b in self.active_users:
+            self.active_users.remove(b)
         del self.matched[a]
         del self.matched[b]
 
@@ -302,11 +305,13 @@ async def on_voice_state_update(member, before, after):
     if after.channel is not None and after.channel.name == GAME_CHANNEL:
         if member not in canv.active_users:
             logging.info(f"User {member} is ACTIVE")
-            canv.active_users.append(member)
+            canv.active_users.add(member)
             await canv.try_match(member)
     elif before.channel is not None and before.channel.name == GAME_CHANNEL:
-        if member not in canv.active_users:
+        if member in canv.active_users:
             canv.active_users.remove(member)
+        if member in canv.waiting:
+            canv.waiting.remove(member)
 
 
 logging.info("Starting CanvasBot...")
