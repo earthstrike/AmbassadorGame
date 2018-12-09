@@ -124,7 +124,7 @@ class Canvasser(object):
         response = self.cursor.fetchall()[0]
         message = f"""Your partner was acting as a {actor[0]} year old {actor[1]}. Your conversation started with {
         actor[
-            2]}/10 concern for global warming and ended with {response[1]}/10 concern. Your conversation started with {
+            3]}/10 concern for global warming and ended with {response[1]}/10 concern. Your conversation started with {
         actor[2]}/10 belief in EarthStrike's strategy and ended with {response[
             2]}/10 belief in EarthStrike's strategy.\nWhat you did well: *{response[
             3]}*\nThings you could improve on: *{response[4]}*"""
