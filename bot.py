@@ -35,6 +35,8 @@ if os.environ.get('DISCORD_TEST_MODE') == '1':
 else:
     PREP_TIME = 30
     SESSION_TIME = 300
+XP_BASE = 25
+XP_RATING_MULTIPLIER = 100
 
 client = Bot(command_prefix=BOT_PREFIX, bot=True)
 
@@ -269,10 +271,12 @@ class Canvasser(object):
     @staticmethod
     def calculate_rating(persona, response):
         p, r = persona, response
+        # rating = knowledge * avg(concern_change, gs_prob_change)
         rating = 0.5 * (r[0] / 10) * (((r[1] / 10) - (p[3] / 10)) + ((r[2] / 10) - (p[2] / 10)))
         return rating
 
     def update_persuader_ratings(self, persuader, actor, response):
+        """ Recalculate the users' average rating, experience points, and total sessions, then update DB"""
         self.cursor.execute("SELECT * FROM persuader_score WHERE discord_user=?", (persuader.id,))
         if len(self.cursor.fetchall()) == 0:
             # User isn't in the database. Initialize an entry for them.
@@ -284,7 +288,7 @@ class Canvasser(object):
         old_rating, old_count, old_experience = self.cursor.fetchall()[0]
         old_rating, old_count, old_experience = float(old_rating), int(old_count), int(old_experience)
         new_rating = ((old_rating * old_count) + rating) / (old_count + 1)
-        new_experience = old_experience + (100 * rating)
+        new_experience = old_experience + int(XP_RATING_MULTIPLIER * rating) + XP_BASE
         new_count = old_count + 1
         self.cursor.execute("UPDATE persuader_score SET rating=?, experience=?, session_count=? WHERE discord_user=?",
                             (new_rating, new_experience, new_count, persuader.id))
@@ -357,6 +361,7 @@ async def on_voice_state_update(member, before, after):
         if member in canv.waiting:
             canv.waiting.remove(member)
 
+# TODO Give user a way to view their "pursuader_score"
 
 logging.info("Starting CanvasBot...")
 client.run(TOKEN)
