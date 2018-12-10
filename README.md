@@ -20,3 +20,11 @@ Note: This bot uses the discord.py rewrite 1.0.0, which is ahead of the current 
 
 ## Joining the game
 You can join the game by having at least 2 users enter the "AmbassadorGame" channel. You should then get a PM from your bot with more instructions. 
+
+
+## Commands
+### `score`
+See your own Rating, XP points, and # of persuader sessions
+
+### `scoreboard`
+View the top 10 players' stats

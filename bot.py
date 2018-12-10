@@ -385,13 +385,12 @@ async def scoreboard(ctx):
     LIMIT = 10
     canv.cursor.execute(f"SELECT * FROM persuader_score ORDER BY experience DESC LIMIT {LIMIT}")
     results = canv.cursor.fetchall()
-    msg = "{:>25}{} {:>25} {:>25} {:>25}\n\n".format("**USER", "[LEVEL]**", "**RATING**", "**EXPERIENCE**", "**SESSIONS**")
+    msg = "{}{}{} {:>25} {:>25} {:>25}\n\n".format("_ _ "*(len(str(LIMIT))), "**USER", "[LEVEL]**", "**RATING**", "**EXPERIENCE**", "**SESSIONS**")
     for idx, r in enumerate(results):
         uid, rating, experience, session_count = r
         user = client.get_user(uid)
-        msg += f"**{idx+1}.** {user.name}{'['+str(canv.calculate_level(experience))+']':>25}\t{(rating*10):>25.2f}\t{experience:>25}\t{session_count:>25}\n"
+        msg += f"**{idx+1}.** {user.name}{'['+str(canv.calculate_level(experience))+']'}{(rating*10):>25.2f}{experience:>25}{session_count:>25}\n"
     await ctx.message.channel.send(msg)
-
 
 
 logging.info("Starting CanvasBot...")
