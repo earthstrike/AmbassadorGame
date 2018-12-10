@@ -36,7 +36,7 @@ else:
     PREP_TIME = 30
     SESSION_TIME = 300
 XP_BASE = 25
-XP_RATING_MULTIPLIER = 100
+XP_RATING_MULTIPLIER = 10
 
 client = Bot(command_prefix=BOT_PREFIX, bot=True)
 
@@ -275,6 +275,10 @@ class Canvasser(object):
         rating = 0.5 * (r[0] / 10) * (((r[1] / 10) - (p[3] / 10)) + ((r[2] / 10) - (p[2] / 10)))
         return rating
 
+    @staticmethod
+    def calculate_level(experience):
+        return int(np.floor(np.power(experience, 1 / 4)))
+
     def update_persuader_ratings(self, persuader, actor, response):
         """ Recalculate the users' average rating, experience points, and total sessions, then update DB"""
         self.cursor.execute("SELECT * FROM persuader_score WHERE discord_user=?", (persuader.id,))
@@ -338,7 +342,7 @@ async def on_error(error, *args, **kwargs):
     logging.error(f"Error created by event {error}. Cleaning up and exiting.")
     await canv.cleanup()
     if os.environ.get('DISCORD_TEST_MODE') == '1':
-        raise()
+        raise ()
     exit()
 
 
@@ -361,7 +365,18 @@ async def on_voice_state_update(member, before, after):
         if member in canv.waiting:
             canv.waiting.remove(member)
 
-# TODO Give user a way to view their "pursuader_score"
+
+@client.command()
+async def score(ctx):
+    member = ctx.message.author
+    canv.cursor.execute("SELECT rating, experience, session_count FROM persuader_score WHERE discord_user=?",
+                        (member.id,))
+    rating, experience, sessions_count = canv.cursor.fetchall()[0]
+    msg = f"""Your overall persuader rating is **{(
+            rating * 10):.2f}/10**. You have **{experience}** XP points, making you level **{canv.calculate_level(
+        experience)}**. You've completed **{sessions_count}** sessions."""
+    await ctx.message.channel.send(msg)
+
 
 logging.info("Starting CanvasBot...")
 client.run(TOKEN)
