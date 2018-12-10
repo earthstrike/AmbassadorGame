@@ -114,9 +114,9 @@ class Canvasser(object):
                             " partner_con TEXT NOT NULL );")
         self.cursor.execute("CREATE TABLE IF NOT EXISTS persuader_score"
                             "(discord_user INTEGER NOT NULL PRIMARY KEY,"
-                            " rating REAL NOT NULL,"
-                            " experience INTEGER NOT NULL,"
-                            " session_count INTEGER NOT NULL);")
+                            " rating REAL NOT NULL DEFAULT 0,"
+                            " experience INTEGER NOT NULL DEFAULT 0,"
+                            " session_count INTEGER NOT NULL DEFAULT 0);")
         self.db.commit()
 
     async def try_match(self, author):
