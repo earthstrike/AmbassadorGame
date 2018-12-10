@@ -112,25 +112,12 @@ class Canvasser(object):
                             " strategy INTEGER NOT NULL,"
                             " partner_pro TEXT NOT NULL, "
                             " partner_con TEXT NOT NULL );")
+        self.cursor.execute("CREATE TABLE IF NOT EXISTS persuader_score"
+                            "(discord_user INTEGER NOT NULL PRIMARY KEY,"
+                            " rating REAL NOT NULL,"
+                            " experience INTEGER NOT NULL,"
+                            " session_count INTEGER NOT NULL);")
         self.db.commit()
-
-    async def show_feedback(self, session):
-        """ Show feedback to the persuader after the actor rates their performance"""
-        self.cursor.execute("select age,profession,gs_prob,gw_concern FROM actor_persona WHERE uuid=?", (session,))
-        actor = self.cursor.fetchall()[0]
-        self.cursor.execute(
-            "select knowledge, concern, strategy, partner_pro, partner_con, discord_user FROM response WHERE uuid=?",
-            (session,))
-        response = self.cursor.fetchall()[0]
-        message = f"""Your partner was acting as a {actor[0]} year old {actor[1]}. Your conversation started with {
-        actor[
-            3]}/10 concern for global warming and ended with {response[1]}/10 concern. Your conversation started with {
-        actor[2]}/10 belief in EarthStrike's strategy and ended with {response[
-            2]}/10 belief in EarthStrike's strategy.\nWhat you did well: *{response[
-            3]}*\nThings you could improve on: *{response[4]}*"""
-        guild = client.get_guild(self.guild_id)
-        user = guild.get_member(int(response[5]))
-        await (await user.create_dm()).send(message)
 
     async def try_match(self, author):
         """ See if we can find someone to match with, who we haven't already matched with """
@@ -238,7 +225,8 @@ class Canvasser(object):
         def check_for_pm(msg):
             """ Ensure message is in private messages """
             try:
-                return not msg.author.bot and msg.content is not None and msg.guild is None and isinstance(msg.channel, DMChannel)
+                return not msg.author.bot and msg.content is not None and msg.guild is None and isinstance(msg.channel,
+                                                                                                           DMChannel)
             except:
                 return False
 
@@ -278,7 +266,32 @@ class Canvasser(object):
         self.survey_users.remove(a)
         await self.show_feedback(session_id)
 
+    @staticmethod
+    def calculate_rating(persona, response):
+        p, r = persona, response
+        rating = 0.5*(r[0]/10)*(((r[1]/10) - (p[3]/10)) + ((r[2]/10) - (p[2]/10)))
+        return rating
+
+    async def show_feedback(self, session):  # TODO Update ratings from this method
+        """ Show feedback to the persuader after the actor rates their performance"""
+        self.cursor.execute("select age,profession,gs_prob,gw_concern FROM actor_persona WHERE uuid=?", (session,))
+        actor = self.cursor.fetchall()[0]
+        self.cursor.execute(
+            "select knowledge, concern, strategy, partner_pro, partner_con, discord_user FROM response WHERE uuid=?",
+            (session,))
+        response = self.cursor.fetchall()[0]
+        message = f"""Your partner was acting as a {actor[0]} year old {actor[1]}. Your conversation started with {
+        actor[
+            3]}/10 concern for global warming and ended with {response[1]}/10 concern. Your conversation started with {
+        actor[2]}/10 belief in EarthStrike's strategy and ended with {response[
+            2]}/10 belief in EarthStrike's strategy.\nWhat you did well: *{response[
+            3]}*\nThings you could improve on: *{response[4]}*"""
+        guild = client.get_guild(self.guild_id)
+        user = guild.get_member(int(response[5]))
+        await (await user.create_dm()).send(message)
+
     async def cleanup(self):
+        """ Close database connection and delete all temporary channels"""
         logging.info("Cleaning up CanvasBot.")
         self.db.close()
         for channel in self.active_channels:
