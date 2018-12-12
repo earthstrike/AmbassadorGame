@@ -5,6 +5,8 @@ import random
 import sqlite3
 import time
 import uuid
+import sys
+import six
 
 import numpy as np
 from discord import PermissionOverwrite, DMChannel
@@ -284,7 +286,7 @@ class Canvasser(object):
         await self.show_feedback(session_id)
 
     async def cleanup(self):
-        logging.info("Cleaning up CanvasBot.")
+        logging.info("Cleaning up CanvasBot")
         self.db.close()
         for channel in self.active_channels:
             logging.info(f"Deleting channel {channel}")
@@ -307,8 +309,10 @@ async def on_error(error, *args, **kwargs):
     logging.error(f"Error created by event {error}. Cleaning up and exiting.")
     await canv.cleanup()
     if os.environ.get('DISCORD_TEST_MODE') == '1':
-        raise
-    exit()
+        six.reraise(*sys.exc_info())
+    else:
+        logging.exception("Runtime error:", exc_info=sys.exc_info())
+        exit()
 
 
 @client.event
