@@ -9,7 +9,7 @@ import uuid
 
 import numpy as np
 import six
-from discord import PermissionOverwrite, DMChannel
+from discord import PermissionOverwrite, DMChannel, FFmpegPCMAudio
 from discord.ext.commands import Bot
 
 # Initialize default logger to write to file AND stdout
@@ -217,6 +217,14 @@ class Canvasser(object):
     async def end_voice(self, a, b, ch, session_id):
         """ End the voice channel message """
         logging.info(f"Ending Session [{session_id}]({a}, {b})...")
+        # Have the bot speak
+        vc = await ch.connect()
+        vc.play(FFmpegPCMAudio(r"res/sound/exit.mp3"), after=lambda e: logging.info(
+            f"Session {session_id} audio ended{': ' + str(e) if e else ' successfully'}"))
+        while vc.is_playing():
+            await asyncio.sleep(.1)
+        vc.stop()
+
         self.survey_users.add(a)
         await self.close_session(a, b, ch)
 
