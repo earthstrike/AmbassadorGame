@@ -25,6 +25,9 @@ PROFESSIONS = ["student", "retail salesperson", "cashier", "office clerk", "food
                "business operations specialist", "home health aide", "assembler", "restaurant cook", "maid",
                "groundskeeper", "childcare worker"]
 
+REGIONS = ['urban', 'suburban', 'rural']
+IS_COASTAL = [True, False]
+
 BOT_PREFIX = "$"
 TOKEN = os.environ.get('DISCORD_BOT_TOKEN')
 GUILD_ID = int(os.environ.get('DISCORD_SERVER_ID'))
@@ -92,6 +95,11 @@ class Canvasser(object):
             self.game_channel_id = ch.id
 
     def init_db(self):
+        # Setup BOOLEAN type
+        sqlite3.register_adapter(bool, int)
+        sqlite3.register_converter("BOOLEAN", lambda v: bool(int(v)))
+
+        # Build tables
         self.cursor.execute("CREATE TABLE IF NOT EXISTS session "
                             "(uuid TEXT NOT NULL PRIMARY KEY,"
                             " datetime INTEGER NOT NULL,"
@@ -106,6 +114,8 @@ class Canvasser(object):
                             " discord_user INTEGER NOT NULL,"
                             " age INTEGER NOT NULL,"
                             " profession TEXT NOT NULL,"
+                            " region TEXT NOT NULL,"
+                            " is_coastal BOOLEAN NOT NULL,"
                             " gs_prob INTEGER NOT NULL,"
                             " gw_concern INTEGER NOT NULL);")
         self.cursor.execute("CREATE TABLE IF NOT EXISTS response"
@@ -121,16 +131,18 @@ class Canvasser(object):
 
     async def show_feedback(self, session):
         """ Show feedback to the persuader after the actor rates their performance"""
-        self.cursor.execute("select age,profession,gs_prob,gw_concern FROM actor_persona WHERE uuid=?", (session,))
+        self.cursor.execute(
+            "select age,profession,region,is_coastal,gs_prob,gw_concern FROM actor_persona WHERE uuid=?", (session,))
         actor = self.cursor.fetchall()[0]
         self.cursor.execute(
             "select knowledge, concern, strategy, partner_pro, partner_con, discord_user FROM response WHERE uuid=?",
             (session,))
         response = self.cursor.fetchall()[0]
-        message = f"""Your partner was acting as a {actor[0]} year old {actor[1]}. Your conversation started with {
+        message = f"""Your partner was acting as a {actor[0]} year old {actor[1]}, living in a {actor[
+            2]} area{", which is also along the coast" * actor[3]}. Your conversation started with {
         actor[
-            3]}/10 concern for global warming and ended with {response[1]}/10 concern. Your conversation started with {
-        actor[2]}/10 belief in EarthStrike's strategy and ended with {response[
+            5]}/10 concern for global warming and ended with {response[1]}/10 concern. Your conversation started with {
+        actor[4]}/10 belief in EarthStrike's strategy and ended with {response[
             2]}/10 belief in EarthStrike's strategy.\nWhat you did well: *{response[
             3]}*\nThings you could improve on: *{response[4]}*"""
         guild = self.bot.get_guild(self.guild_id)
@@ -158,6 +170,9 @@ class Canvasser(object):
 
         age = random.randint(18, 58)
         profession = random.choice(PROFESSIONS)
+        region = random.choice(REGIONS)
+        is_coastal = random.choice(
+            IS_COASTAL)  # I know this is weird but I want to be able to extend from T/F if needed
         heard_of = int(np.random.choice(range(1, 11),
                                         p=[.9, .05, 0.00625, 0.00625, 0.00625, 0.00625, 0.00625, 0.00625, 0.00625,
                                            0.00625]))
@@ -167,13 +182,14 @@ class Canvasser(object):
         global_warming_concern = int(np.random.choice(range(1, 11),
                                                       p=[.2, .1, 0.065, 0.067, 0.067, 0.067, 0.067, 0.067, 0.1, 0.2]))
 
-        msg_a = f"""You are a {age} year old {profession}.\nOn a scale of 1-10 (1 being none and 10 being the most), you have a strike awareness of {heard_of}.\nPossibility of strike succeeding {gs_probability}.\nYour concern about global warming is {global_warming_concern}.\nYou will be connected in {PREP_TIME} seconds to a partner. Take a deep breath and get in character. You will give feedback after the session is over."""
+        msg_a = f"""You are a {age} year old {profession}, living in a {region} area{", which is also along the coast" * is_coastal}.\nOn a scale of 1-10 (1 being none and 10 being the most), you have a strike awareness of {heard_of}.\nPossibility of strike succeeding {gs_probability}.\nYour concern about global warming is {global_warming_concern}.\nYou will be connected in {PREP_TIME} seconds to a partner. Take a deep breath and get in character. You will give feedback after the session is over."""
 
         msg_b = f"""You are about to be matched with a partner playing a role. Be kind. You will have {SESSION_TIME // 60} minutes and {SESSION_TIME % 60} seconds to get your partner more interested in EarthStrike. You will need to assess your partner's concerns tell them about EarthSrike if they haven't heard of it, tell them about the dangers we face from global warming, and help convince them that EarthStrike's strategy is the right approach. Take a deep breath and get ready. You will be connected in {PREP_TIME} seconds to a partner."""
 
         session_id = str(uuid.uuid4())
-        self.cursor.execute("INSERT INTO actor_persona VALUES (?,?,?,?,?,?)",
-                            (session_id, a.id, age, profession, gs_probability, global_warming_concern))
+        self.cursor.execute("INSERT INTO actor_persona VALUES (?,?,?,?,?,?,?,?)",
+                            (session_id, a.id, age, profession, region, is_coastal, gs_probability,
+                             global_warming_concern))
         self.db.commit()
 
         await (await a.create_dm()).send(msg_a)
