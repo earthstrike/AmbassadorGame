@@ -84,8 +84,8 @@ class Canvasser(object):
                 for member in channel.members:
                     if not member.bot:
                         logging.info(f"User {member} is ACTIVE")
-                        ambassador_bot.active_users.add(member)
-                        await ambassador_bot.try_match(member)
+                        self.active_users.add(member)
+                        await self.bot.try_match(member)
         if self.game_channel_id is None:
             logging.info("No category channel found. Creating one...")
             my_perms = PermissionOverwrite(speak=False)
@@ -337,7 +337,7 @@ class Canvasser(object):
         actor[2]}/10 belief in EarthStrike's strategy and ended with {response[
             2]}/10 belief in EarthStrike's strategy.\nWhat you did well: *{response[
             3]}*\nThings you could improve on: *{response[4]}*"""
-        guild = client.get_guild(self.guild_id)
+        guild = self.bot.get_guild(self.guild_id)
         user = guild.get_member(int(response[5]))
         self.update_persuader_ratings(user, actor, response)
         await (await user.create_dm()).send(message)
