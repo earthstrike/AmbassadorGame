@@ -1,0 +1,4 @@
+*.db
+*.log
+generate_test_data.py
+venv/
