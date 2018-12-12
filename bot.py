@@ -5,6 +5,8 @@ import random
 import sqlite3
 import time
 import uuid
+import sys
+import six
 
 import numpy as np
 from discord import PermissionOverwrite, DMChannel
@@ -26,12 +28,13 @@ PROFESSIONS = ["student", "retail salesperson", "cashier", "office clerk", "food
 BOT_PREFIX = "$"
 TOKEN = os.environ.get('DISCORD_BOT_TOKEN')
 GUILD_ID = int(os.environ.get('DISCORD_SERVER_ID'))
-GAME_CHANNEL = 'Ambassador Game Queue'
+GAME_VOICE_QUEUE_CHANNEL = 'Ambassador Game Queue'
+GAME_CATEGORY_CHANNEL = 'Ambassador Games'
 SESSION_CHANNEL_PREFIX = "canvas_game:"
 if os.environ.get('DISCORD_TEST_MODE') == '1':
     logging.info("TEST_MODE enabled")
-    PREP_TIME = 1
-    SESSION_TIME = 1
+    PREP_TIME = 3
+    SESSION_TIME = 3
 else:
     PREP_TIME = 30
     SESSION_TIME = 300
@@ -46,14 +49,14 @@ class Canvasser(object):
         self.guild_id = guild_id
         self.active_users = set()
         self.survey_users = set()
-        self.active_channels = []
+        self.active_channels = set()
         self.matched = {}
         self.waiting = set()
         self.db = sqlite3.connect('AmbassadorResults.db')
         self.cursor = self.db.cursor()
         self.init_db()
-        self.game_channel_id = -1
-        self.category_channel_id = -1
+        self.game_channel_id = None
+        self.category_channel_id = None
 
     async def add_user(self, user):
         if user in self.survey_users:
@@ -72,7 +75,8 @@ class Canvasser(object):
         """ Create permanent channels for the game """
         guild = client.get_guild(self.guild_id)
         for channel in guild.channels:
-            if channel.name == GAME_CHANNEL:
+            if channel.name == GAME_VOICE_QUEUE_CHANNEL:
+                logging.info("Found existing Channel Category")
                 self.game_channel_id = channel.id
                 self.category_channel_id = channel.category.id
                 # Add existing users to the game
@@ -81,11 +85,13 @@ class Canvasser(object):
                         logging.info(f"User {member} is ACTIVE")
                         canv.active_users.add(member)
                         await canv.try_match(member)
-        if self.game_channel_id == -1:
+        if self.game_channel_id is None:
+            logging.info("No category channel found. Creating one...")
             my_perms = PermissionOverwrite(speak=False)
-            cat = await guild.create_category_channel('Ambassador Games')
+            cat = await guild.create_category_channel(GAME_CATEGORY_CHANNEL)
             self.category_channel_id = cat.id
-            ch = await guild.create_voice_channel(GAME_CHANNEL, overwrites={guild.default_role: my_perms}, category=cat)
+            ch = await guild.create_voice_channel(GAME_VOICE_QUEUE_CHANNEL, overwrites={guild.default_role: my_perms},
+                                                  category=cat)
             self.game_channel_id = ch.id
 
     def init_db(self):
@@ -120,6 +126,24 @@ class Canvasser(object):
                             " experience INTEGER NOT NULL DEFAULT 0,"
                             " session_count INTEGER NOT NULL DEFAULT 0);")
         self.db.commit()
+
+    async def show_feedback(self, session):
+        """ Show feedback to the persuader after the actor rates their performance"""
+        self.cursor.execute("select age,profession,gs_prob,gw_concern FROM actor_persona WHERE uuid=?", (session,))
+        actor = self.cursor.fetchall()[0]
+        self.cursor.execute(
+            "select knowledge, concern, strategy, partner_pro, partner_con, discord_user FROM response WHERE uuid=?",
+            (session,))
+        response = self.cursor.fetchall()[0]
+        message = f"""Your partner was acting as a {actor[0]} year old {actor[1]}. Your conversation started with {
+        actor[
+            3]}/10 concern for global warming and ended with {response[1]}/10 concern. Your conversation started with {
+        actor[2]}/10 belief in EarthStrike's strategy and ended with {response[
+            2]}/10 belief in EarthStrike's strategy.\nWhat you did well: *{response[
+            3]}*\nThings you could improve on: *{response[4]}*"""
+        guild = client.get_guild(self.guild_id)
+        user = guild.get_member(int(response[5]))
+        await (await user.create_dm()).send(message)
 
     async def try_match(self, author):
         """ See if we can find someone to match with, who we haven't already matched with """
@@ -180,7 +204,7 @@ class Canvasser(object):
         ch = await guild.create_voice_channel(f"{SESSION_CHANNEL_PREFIX}{a.name}-{b.name}",
                                               overwrites={guild.default_role: everyone_perms, a: my_perms, b: my_perms},
                                               category=client.get_channel(self.category_channel_id))
-        self.active_channels.append(ch)
+        self.active_channels.add(ch)
 
         # Move members into voice channel
         a_member = guild.get_member(a.id)
@@ -342,27 +366,29 @@ async def on_error(error, *args, **kwargs):
     logging.error(f"Error created by event {error}. Cleaning up and exiting.")
     await canv.cleanup()
     if os.environ.get('DISCORD_TEST_MODE') == '1':
-        raise ()
-    exit()
+        six.reraise(*sys.exc_info())
+    else:
+        logging.exception("Runtime error:", exc_info=sys.exc_info())
+        exit()
 
 
 @client.event
 async def on_voice_state_update(member, before, after):
-    """ Determine when a user has entered or left the main game voice channel, and start them in the game if they enter
-    the channel """
+    """ Determine when a user has entered or left the main game voice channel, and start them in the game if they enter the channel """
     if member.bot:
         return
     if before.channel == after.channel:
         return
-    if after.channel is not None and after.channel.name == GAME_CHANNEL:
+    if after.channel is not None and after.channel.name == GAME_VOICE_QUEUE_CHANNEL:
         if member not in canv.active_users:
             logging.info(f"User {member} is ACTIVE")
             # Try to add a new user. If they still have an active survey kick them.
             if await canv.add_user(member):
                 await canv.try_match(member)
-    elif before.channel is not None and before.channel.name == GAME_CHANNEL:
+    elif before.channel is not None and before.channel.name == GAME_VOICE_QUEUE_CHANNEL:
         if member in canv.active_users:
             canv.active_users.remove(member)
+            logging.info(f"User {member} REMOVED(active)")
         if member in canv.waiting:
             canv.waiting.remove(member)
 
