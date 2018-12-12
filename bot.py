@@ -119,24 +119,6 @@ class Canvasser(object):
                             " partner_con TEXT NOT NULL );")
         self.db.commit()
 
-    async def show_feedback(self, session):
-        """ Show feedback to the persuader after the actor rates their performance"""
-        self.cursor.execute("select age,profession,gs_prob,gw_concern FROM actor_persona WHERE uuid=?", (session,))
-        actor = self.cursor.fetchall()[0]
-        self.cursor.execute(
-            "select knowledge, concern, strategy, partner_pro, partner_con, discord_user FROM response WHERE uuid=?",
-            (session,))
-        response = self.cursor.fetchall()[0]
-        message = f"""Your partner was acting as a {actor[0]} year old {actor[1]}. Your conversation started with {
-        actor[
-            3]}/10 concern for global warming and ended with {response[1]}/10 concern. Your conversation started with {
-        actor[2]}/10 belief in EarthStrike's strategy and ended with {response[
-            2]}/10 belief in EarthStrike's strategy.\nWhat you did well: *{response[
-            3]}*\nThings you could improve on: *{response[4]}*"""
-        guild = self.bot.get_guild(self.guild_id)
-        user = guild.get_member(int(response[5]))
-        await (await user.create_dm()).send(message)
-
     async def try_match(self, author):
         """ See if we can find someone to match with, who we haven't already matched with """
         waiting = list(self.waiting)
@@ -283,6 +265,24 @@ class Canvasser(object):
         logging.info(f"Session [{session_id}]({a}, {b}) complete!")
         self.survey_users.remove(a)
         await self.show_feedback(session_id)
+
+    async def show_feedback(self, session):
+        """ Show feedback to the persuader after the actor rates their performance"""
+        self.cursor.execute("select age,profession,gs_prob,gw_concern FROM actor_persona WHERE uuid=?", (session,))
+        actor = self.cursor.fetchall()[0]
+        self.cursor.execute(
+            "select knowledge, concern, strategy, partner_pro, partner_con, discord_user FROM response WHERE uuid=?",
+            (session,))
+        response = self.cursor.fetchall()[0]
+        message = f"""Your partner was acting as a {actor[0]} year old {actor[1]}. Your conversation started with {
+        actor[
+            3]}/10 concern for global warming and ended with {response[1]}/10 concern. Your conversation started with {
+        actor[2]}/10 belief in EarthStrike's strategy and ended with {response[
+            2]}/10 belief in EarthStrike's strategy.\nWhat you did well: *{response[
+            3]}*\nThings you could improve on: *{response[4]}*"""
+        guild = self.bot.get_guild(self.guild_id)
+        user = guild.get_member(int(response[5]))
+        await (await user.create_dm()).send(message)
 
     async def cleanup(self):
         logging.info("Cleaning up CanvasBot")
