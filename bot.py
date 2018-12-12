@@ -85,7 +85,7 @@ class Canvasser(object):
                     if not member.bot:
                         logging.info(f"User {member} is ACTIVE")
                         self.active_users.add(member)
-                        await self.bot.try_match(member)
+                        await self.try_match(member)
         if self.game_channel_id is None:
             logging.info("No category channel found. Creating one...")
             my_perms = PermissionOverwrite(speak=False)
