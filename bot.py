@@ -38,6 +38,10 @@ if os.environ.get('DISCORD_TEST_MODE') == '1':
 else:
     PREP_TIME = 30
     SESSION_TIME = 300
+XP_BASE = 25
+XP_RATING_MULTIPLIER = 10
+
+client = Bot(command_prefix=BOT_PREFIX, bot=True)
 
 
 class Canvasser(object):
@@ -117,6 +121,11 @@ class Canvasser(object):
                             " strategy INTEGER NOT NULL,"
                             " partner_pro TEXT NOT NULL, "
                             " partner_con TEXT NOT NULL );")
+        self.cursor.execute("CREATE TABLE IF NOT EXISTS persuader_score"
+                            "(discord_user INTEGER NOT NULL PRIMARY KEY,"
+                            " rating REAL NOT NULL DEFAULT 0,"
+                            " experience INTEGER NOT NULL DEFAULT 0,"
+                            " session_count INTEGER NOT NULL DEFAULT 0);")
         self.db.commit()
 
     async def try_match(self, author):
@@ -266,6 +275,36 @@ class Canvasser(object):
         self.survey_users.remove(a)
         await self.show_feedback(session_id)
 
+    @staticmethod
+    def calculate_rating(persona, response):
+        p, r = persona, response
+        # rating = knowledge * avg(concern_change, gs_prob_change)
+        rating = 0.5 * (r[0] / 10) * (((r[1] / 10) - (p[3] / 10)) + ((r[2] / 10) - (p[2] / 10)))
+        return rating
+
+    @staticmethod
+    def calculate_level(experience):
+        return int(np.floor(np.power(experience, 1 / 4)))
+
+    def update_persuader_ratings(self, persuader, actor, response):
+        """ Recalculate the users' average rating, experience points, and total sessions, then update DB"""
+        self.cursor.execute("SELECT * FROM persuader_score WHERE discord_user=?", (persuader.id,))
+        if len(self.cursor.fetchall()) == 0:
+            # User isn't in the database. Initialize an entry for them.
+            self.cursor.execute("INSERT INTO persuader_score VALUES (?, ?, ?, ?)", (persuader.id, 0, 0, 0))
+            self.db.commit()
+        rating = self.calculate_rating(actor, response)
+        self.cursor.execute("SELECT rating, session_count, experience FROM persuader_score WHERE discord_user=?",
+                            (persuader.id,))
+        old_rating, old_count, old_experience = self.cursor.fetchall()[0]
+        old_rating, old_count, old_experience = float(old_rating), int(old_count), int(old_experience)
+        new_rating = ((old_rating * old_count) + rating) / (old_count + 1)
+        new_experience = old_experience + int(XP_RATING_MULTIPLIER * rating) + XP_BASE
+        new_count = old_count + 1
+        self.cursor.execute("UPDATE persuader_score SET rating=?, experience=?, session_count=? WHERE discord_user=?",
+                            (new_rating, new_experience, new_count, persuader.id))
+        self.db.commit()
+
     async def show_feedback(self, session):
         """ Show feedback to the persuader after the actor rates their performance"""
         self.cursor.execute("select age,profession,gs_prob,gw_concern FROM actor_persona WHERE uuid=?", (session,))
@@ -282,10 +321,12 @@ class Canvasser(object):
             3]}*\nThings you could improve on: *{response[4]}*"""
         guild = self.bot.get_guild(self.guild_id)
         user = guild.get_member(int(response[5]))
+        self.update_persuader_ratings(user, actor, response)
         await (await user.create_dm()).send(message)
 
     async def cleanup(self):
-        logging.info("Cleaning up CanvasBot")
+        """ Close database connection and delete all temporary channels"""
+        logging.info("Cleaning up CanvasBot.")
         self.db.close()
         for channel in self.active_channels:
             logging.info(f"Deleting channel {channel}")
